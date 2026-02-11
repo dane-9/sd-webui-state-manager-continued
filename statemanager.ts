@@ -130,8 +130,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         defaultSort: 'newest',
         rememberFilters: false,
         defaultShowFavouritesInHistory: false,
-        showConfigsFirst: false,
-        defaultOpenTab: 'history'
+        showConfigsFirst: true,
+        defaultOpenTab: 'favourites'
     };
     sm.loadedEntryFilter = null;
 
@@ -154,7 +154,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     }
 
     sm.getNormalisedPanelTabValue = function(value: any): string{
-        return validPanelTabs.has(`${value}`) ? `${value}` : 'history';
+        return validPanelTabs.has(`${value}`) ? `${value}` : 'favourites';
     }
 
     sm.getDefaultEntryFilter = function(){
@@ -174,8 +174,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             defaultSort: 'newest',
             rememberFilters: false,
             defaultShowFavouritesInHistory: false,
-            showConfigsFirst: false,
-            defaultOpenTab: 'history'
+            showConfigsFirst: true,
+            defaultOpenTab: 'favourites'
         };
 
         if(!settings || typeof settings !== 'object'){

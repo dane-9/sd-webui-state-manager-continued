@@ -30,8 +30,8 @@
         defaultSort: 'newest',
         rememberFilters: false,
         defaultShowFavouritesInHistory: false,
-        showConfigsFirst: false,
-        defaultOpenTab: 'history'
+        showConfigsFirst: true,
+        defaultOpenTab: 'favourites'
     };
     sm.loadedEntryFilter = null;
     sm.ldb.get('sd-webui-state-manager-autosave', autosave => {
@@ -48,7 +48,7 @@
         return validSorts.has(`${value}`) ? `${value}` : 'newest';
     };
     sm.getNormalisedPanelTabValue = function (value) {
-        return validPanelTabs.has(`${value}`) ? `${value}` : 'history';
+        return validPanelTabs.has(`${value}`) ? `${value}` : 'favourites';
     };
     sm.getDefaultEntryFilter = function () {
         return {
@@ -66,8 +66,8 @@
             defaultSort: 'newest',
             rememberFilters: false,
             defaultShowFavouritesInHistory: false,
-            showConfigsFirst: false,
-            defaultOpenTab: 'history'
+            showConfigsFirst: true,
+            defaultOpenTab: 'favourites'
         };
         if (!settings || typeof settings !== 'object') {
             return normalised;
