@@ -306,8 +306,9 @@
     };
     sm.areBooleanMapsEqual = function (a, b) {
         const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+        const getCheckboxState = (source, key) => source?.hasOwnProperty(key) ? Boolean(source[key]) : true;
         for (const key of keys) {
-            if (Boolean(a?.[key]) !== Boolean(b?.[key])) {
+            if (getCheckboxState(a, key) !== getCheckboxState(b, key)) {
                 return false;
             }
         }
@@ -319,7 +320,7 @@
             return sm.activeProfileDraft;
         }
         const originalInspectorState = sm.getNormalisedInspectorState(entry.data);
-        const isFavourite = (entry.data.groups?.indexOf('favourites') ?? -1) > -1;
+        const isFavourite = (entry.data.groups?.indexOf('favourites') ?? -1) > -1 || sm.entryFilter.group == 'favourites';
         sm.activeProfileDraft = {
             stateKey,
             originalName: `${entry.data.name ?? ''}`,
@@ -339,16 +340,17 @@
         if (!draft) {
             return;
         }
+        const canSaveConfigChanges = draft.originalIsFavourite || sm.entryFilter.group == 'favourites';
         const hasNameChanges = `${draft.name ?? ''}` !== `${draft.originalName ?? ''}`;
         const hasFavouriteChanges = draft.isFavourite !== draft.originalIsFavourite;
         const hasCheckboxChanges = !sm.areBooleanMapsEqual(draft.inspectorState.checkboxes || {}, draft.originalInspectorState.checkboxes || {});
         draft.dirty = hasNameChanges || hasFavouriteChanges || hasCheckboxChanges;
-        if (!draft.originalIsFavourite) {
+        if (!canSaveConfigChanges) {
             draft.dirty = false;
         }
         if (Array.isArray(sm.activeProfileSaveButtons)) {
             for (const button of sm.activeProfileSaveButtons) {
-                button.disabled = !draft.originalIsFavourite || !draft.dirty;
+                button.disabled = !canSaveConfigChanges || !draft.dirty;
             }
         }
     };
@@ -416,7 +418,8 @@
         }
         const entry = sm.selection.entries[0];
         const draft = sm.ensureActiveProfileDraft(entry);
-        if (!draft.originalIsFavourite) {
+        const canSaveConfigChanges = draft.originalIsFavourite || sm.entryFilter.group == 'favourites';
+        if (!canSaveConfigChanges) {
             return;
         }
         if (!draft.dirty) {
@@ -1300,10 +1303,11 @@
         const deleteButton = sm.createElementWithInnerTextAndClassList('button', '🗑', 'sd-webui-sm-inspector-delete-button');
         const saveChangesButton = sm.createElementWithInnerTextAndClassList('button', 'Save Changes', 'sd-webui-sm-inspector-save-button', 'sd-webui-sm-inspector-load-button');
         const loadAllButton = sm.createElementWithInnerTextAndClassList('button', 'Apply Selected', 'sd-webui-sm-inspector-load-all-button', 'sd-webui-sm-inspector-load-button');
+        const canSaveConfigChanges = activeDraft.originalIsFavourite || sm.entryFilter.group == 'favourites';
         favButton.title = "Save as config";
         unsaveButton.title = "Remove from saved configs";
         deleteButton.title = "Delete this entry (warning: this cannot be undone)";
-        saveChangesButton.title = activeDraft.originalIsFavourite ? "Save edited config settings" : "Save Changes is only available for saved configs";
+        saveChangesButton.title = canSaveConfigChanges ? "Save edited config settings" : "Save Changes is only available for saved configs";
         loadAllButton.title = "Apply selected settings to the current UI";
         const syncConfigActionButtons = () => {
             const trimmedName = `${activeDraft.name ?? ''}`.trim();
@@ -1325,7 +1329,7 @@
             unsaveButton.disabled = !activeDraft.isFavourite;
         };
         syncConfigActionButtons();
-        saveChangesButton.disabled = !activeDraft.originalIsFavourite || !activeDraft.dirty;
+        saveChangesButton.disabled = !canSaveConfigChanges || !activeDraft.dirty;
         metaContainer.appendChild(nameField);
         metaContainer.appendChild(favButton);
         metaContainer.appendChild(unsaveButton);
@@ -1583,8 +1587,8 @@
         if (sm.getMode() == 'modal') {
             const stickyActionContainer = sm.createElementWithClassList('sd-webui-sm-inspector-save-sticky');
             const stickySaveButton = sm.createElementWithInnerTextAndClassList('button', 'Save Changes', 'sd-webui-sm-inspector-save-button', 'sd-webui-sm-inspector-load-button');
-            stickySaveButton.title = activeDraft.originalIsFavourite ? "Save edited config settings" : "Save Changes is only available for saved configs";
-            stickySaveButton.disabled = !activeDraft.originalIsFavourite || !activeDraft.dirty;
+            stickySaveButton.title = canSaveConfigChanges ? "Save edited config settings" : "Save Changes is only available for saved configs";
+            stickySaveButton.disabled = !canSaveConfigChanges || !activeDraft.dirty;
             stickySaveButton.addEventListener('click', () => sm.saveActiveProfileChanges());
             stickyActionContainer.appendChild(loadAllButton);
             stickyActionContainer.appendChild(stickySaveButton);
