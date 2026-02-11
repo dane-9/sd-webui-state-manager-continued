@@ -184,6 +184,11 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         return entriesPerPage;
     }
 
+    sm.syncModalOverlayState = function(): void{
+        const isModalOpen = Boolean(sm.panelContainer?.classList.contains('sd-webui-sm-modal-panel') && sm.panelContainer?.classList.contains('open'));
+        document.body.classList.toggle('sd-webui-sm-modal-open', isModalOpen);
+    }
+
     sm.captureInspectorAccordionState = function(): void{
         if(!sm.inspector){
             return;
@@ -214,50 +219,15 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             checkbox: svelteClassFromSelector('input[type=checkbox]'),
             prompt: svelteClassFromSelector('#txt2img_prompt label')
         }
-
-        const quickSettingsButtonDock = sm.createElementWithClassList('div', 'sd-webui-sm-main-buttons');
-
-        sm.mountQuickSettingsButtons = function(): void{
-            const target = <HTMLElement | null>(
-                app.querySelector('#image_buttons_txt2img') ||
-                app.querySelector('#image_buttons_img2img') ||
-                app.querySelector('#quicksettings')
-            );
-
-            if(!target){
-                return;
-            }
-
-            if(target.id.startsWith('image_buttons_')){
-                if(quickSettingsButtonDock.parentNode != target || target.firstElementChild != quickSettingsButtonDock){
-                    target.prepend(quickSettingsButtonDock);
-                }
-
-                return;
-            }
-
-            if(quickSettingsButtonDock.parentNode != target){
-                target.appendChild(quickSettingsButtonDock);
-            }
-        }
-
-        function createQuickSettingsButton(type, secondaryIconText, onClick){
-            const quickSettingsButton = sm.createElementWithInnerTextAndClassList('button', '⌛', 'lg', 'sd-webui-sm-quicksettings-button', 'secondary', 'gradio-button', 'tool', sm.svelteClasses.button);
-            quickSettingsButton.id = `sd-webui-sm-quicksettings-button-${type}`;
-            quickSettingsButton.appendChild(sm.createElementWithInnerTextAndClassList('div', secondaryIconText, 'icon'));
-            quickSettingsButtonDock.appendChild(quickSettingsButton);
-            sm.mountQuickSettingsButtons();
-            quickSettingsButton.addEventListener('click', onClick);
-
-            return quickSettingsButton;
-        }
-
-        createQuickSettingsButton('toggle', '⚙', sm.toggle);
         
         const quickSettingSaveMenu = sm.createElementWithClassList('div', 'sd-webui-sm-save-menu');
         quickSettingSaveMenu.style.display = 'none';
 
-        const quickSettingSaveButton = createQuickSettingsButton('save', '💾', () => {
+        const quickSettingSaveButton = sm.createElementWithClassList('button', 'sd-webui-sm-nav-save-button', 'sd-webui-sm-quicksettings-button', 'lg', 'secondary', 'gradio-button', 'tool', sm.svelteClasses.button);
+        quickSettingSaveButton.id = 'sd-webui-sm-quicksettings-button-save';
+        quickSettingSaveButton.appendChild(sm.createElementWithInnerTextAndClassList('div', '💾', 'icon'));
+
+        quickSettingSaveButton.addEventListener('click', () => {
             if(quickSettingSaveMenu.style.display == 'none'){
                 quickSettingSaveMenu.style.display = 'block';
                 quickSettingSaveMenu.style.left = '0';
@@ -285,7 +255,6 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         quickSettingSaveMenu.appendChild(quickSettingSaveCurrentButton);
         quickSettingSaveMenu.appendChild(quickSettingSaveGeneratedButton);
         quickSettingSaveButton.appendChild(quickSettingSaveMenu);
-        sm.mountQuickSettingsButtons();
 
         const quickSettingSaveButtonBlur = e => {
             if(!e.currentTarget.parentNode.contains(e.relatedTarget)){ // lost focus to an element outside the save buttons
@@ -401,6 +370,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
             sm.panelContainer.classList.add('sd-webui-sm-modal-panel');
             sm.panelContainer.classList.add('open');
+            sm.syncModalOverlayState();
 
             return;
         }
@@ -453,24 +423,35 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         const navControlButtons = sm.createElementWithClassList('div', 'sd-webui-sm-control');
         
         navControlButtons.appendChild(autosaveContainer);
-        // const navButtonOptions = '⚙';
+        navControlButtons.appendChild(quickSettingSaveButton);
 
         const navButtonMode = sm.createElementWithClassList('button', 'sd-webui-sm-inspector-mode');
         navControlButtons.appendChild(navButtonMode);
         
         navButtonMode.addEventListener('click', () => {
-            const firstVisibleEntryIndex = sm.currentPage * sm.getEntriesPerPage();
+            panel.classList.remove('sd-webui-sm-side-panel-folded');
             sm.panelContainer.classList.toggle('sd-webui-sm-modal-panel');
-            const entriesPerPage = sm.getEntriesPerPage();
-            sm.goToPage(Math.floor(firstVisibleEntryIndex / entriesPerPage));
+            sm.mountPanelContainer();
+            sm.syncModalOverlayState();
         });
 
         panel.addEventListener('click', e => e.stopPropagation());
-        sm.panelContainer.addEventListener('click', sm.toggle);
+        sm.panelContainer.addEventListener('click', () => {
+            if(sm.panelContainer.classList.contains('sd-webui-sm-modal-panel')){
+                sm.panelContainer.classList.remove('sd-webui-sm-modal-panel');
+                sm.mountPanelContainer();
+                sm.syncModalOverlayState();
+            }
+        });
 
         const navButtonClose = sm.createElementWithInnerTextAndClassList('button', '✖');
         navControlButtons.appendChild(navButtonClose);
-        navButtonClose.addEventListener('click', sm.toggle);
+        navButtonClose.addEventListener('click', () => {
+            sm.panelContainer.classList.remove('sd-webui-sm-modal-panel');
+            sm.mountPanelContainer();
+            sm.syncModalOverlayState();
+            panel.classList.toggle('sd-webui-sm-side-panel-folded');
+        });
 
         navTabs.appendChild(navControlButtons);
         
@@ -663,6 +644,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     
         sm.panelContainer.appendChild(panel);
         sm.mountPanelContainer();
+        sm.panelContainer.classList.add('open');
+        sm.syncModalOverlayState();
     
         // Event listeners
         // app.querySelector('#txt2img_generate').addEventListener('click', () => sm.lastUsedState = sm.getCurrentState('txt2img'));
@@ -729,10 +712,22 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         if(panelContainer.classList.contains('open')){
             sm.queueEntriesUpdate(0);
         }
+
+        sm.syncModalOverlayState();
     }
 
     sm.mountPanelContainer = function(): void{
         if(!sm.panelContainer){
+            return;
+        }
+
+        const isModal = sm.panelContainer.classList.contains('sd-webui-sm-modal-panel');
+        const contain = app.querySelector('.contain');
+
+        if(isModal){
+            if(contain && sm.panelContainer.parentNode != contain){
+                contain.appendChild(sm.panelContainer);
+            }
             return;
         }
 
@@ -2055,7 +2050,6 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     // Stolen from `notification.js`, but can't use same `headImg`. Really wish webui had more callbacks
     sm.checkHeadImage = function(): void{
         sm.mountPanelContainer();
-        sm.mountQuickSettingsButtons?.();
 
         const galleryPreviews = sm.getGalleryPreviews();
 
