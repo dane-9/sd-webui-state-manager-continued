@@ -2,7 +2,7 @@
 :root {
     --sm-side-panel-width: 0;
     --sm-side-panel-slide-speed: .15s;
-    --sm-entry-size: 100px;
+    --sm-entry-size: 74.5px;
 
     --sm-value-diff-same: green;
     --sm-value-diff-changed: red;
@@ -657,11 +657,18 @@ body.sd-webui-sm-resizing {
     cursor: pointer;
 }
 
+.sd-webui-sm-inspector .sd-webui-sm-inspector-category.gradio-accordion {
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+    min-height: 0 !important;
+}
+
 .sd-webui-sm-inspector .sd-webui-sm-inspector-category .foldout {
     float: right;
     rotate: 90deg;
     pointer-events: none;
-    translate: 0 2px;
+    translate: 0 -8px;
+    line-height: 1;
     transition: rotate .15s;
 }
 
@@ -670,9 +677,23 @@ body.sd-webui-sm-resizing {
 }
 
 .sd-webui-sm-inspector-category > .label-container {
+    display: flex;
+    align-items: center;
     font-weight: 600;
-    font-size: 1.1em;
+    font-size: .95em;
     position: relative;
+    line-height: 1.05em;
+    translate: 0 6px;
+}
+
+.sd-webui-sm-inspector .sd-webui-sm-inspector-category > .label-container .param-checkbox {
+    margin: 0 5px 0 0;
+    translate: 0 0px;
+}
+
+.sd-webui-sm-inspector .sd-webui-sm-inspector-category > .label-container .label {
+    display: inline-flex;
+    align-items: center;
 }
 
 .sd-webui-sm-inspector-category.gradio-accordion.open > .label-container {
@@ -732,9 +753,13 @@ body.sd-webui-sm-resizing {
     position: relative;
     left: var(--inset);
     width: calc(100% - var(--inset));
-    margin-top: 6px;
+    margin-top: 0;
     overflow: hidden;
     /* transition: height .15s; */
+}
+
+.sd-webui-sm-inspector-category.open .sd-webui-sm-inspector-category-content {
+    margin-top: 3px;
 }
 
 .sd-webui-sm-inspector-category.gradio-accordion.open:has(:first-of-type(input[type='checkbox']):checked) .sd-webui-sm-inspector-category-content {
