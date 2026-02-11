@@ -2036,9 +2036,11 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         canvas.width = image.naturalWidth * scale;
         canvas.height = image.naturalHeight * scale;
       
-        // Draw image and export to a data-uri
+        // Draw image and export to a data-uri.
+        // Prefer WebP for smaller previews; fall back to PNG if WebP isn't supported.
         ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-        const dataURI = canvas.toDataURL();
+        const webpDataURI = canvas.toDataURL('image/webp', 0.9);
+        const dataURI = webpDataURI.startsWith('data:image/webp') ? webpDataURI : canvas.toDataURL();
     
         return dataURI;
     }
