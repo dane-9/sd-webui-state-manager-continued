@@ -176,7 +176,8 @@
 }
 
 .sd-webui-sm-modal-panel .sd-webui-sm-inspector-mode,
-.sd-webui-sm-modal-panel .sd-webui-sm-nav-save-button {
+.sd-webui-sm-modal-panel .sd-webui-sm-nav-save-button,
+.sd-webui-sm-modal-panel .sd-webui-sm-quicksetting {
     display: none;
 }
 
