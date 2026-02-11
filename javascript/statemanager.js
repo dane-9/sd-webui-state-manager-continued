@@ -16,6 +16,7 @@
     const uiSettingsStorageKey = 'sd-webui-state-manager-ui-settings';
     const entryFilterStorageKey = 'sd-webui-state-manager-entry-filter';
     const validSorts = new Set(['newest', 'oldest', 'name', 'type']);
+    const validPanelTabs = new Set(['history', 'favourites', 'settings']);
     let entryEventListenerAbortController = new AbortController();
     let updateEntriesDebounceHandle = null;
     let updateStorageDebounceHandle = null;
@@ -28,7 +29,9 @@
         showSmallViewPagination: false,
         defaultSort: 'newest',
         rememberFilters: false,
-        defaultShowFavouritesInHistory: false
+        defaultShowFavouritesInHistory: false,
+        showConfigsFirst: false,
+        defaultOpenTab: 'history'
     };
     sm.loadedEntryFilter = null;
     sm.ldb.get('sd-webui-state-manager-autosave', autosave => {
@@ -43,6 +46,9 @@
     });
     sm.getNormalisedSortValue = function (value) {
         return validSorts.has(`${value}`) ? `${value}` : 'newest';
+    };
+    sm.getNormalisedPanelTabValue = function (value) {
+        return validPanelTabs.has(`${value}`) ? `${value}` : 'history';
     };
     sm.getDefaultEntryFilter = function () {
         return {
@@ -59,7 +65,9 @@
             showSmallViewPagination: false,
             defaultSort: 'newest',
             rememberFilters: false,
-            defaultShowFavouritesInHistory: false
+            defaultShowFavouritesInHistory: false,
+            showConfigsFirst: false,
+            defaultOpenTab: 'history'
         };
         if (!settings || typeof settings !== 'object') {
             return normalised;
@@ -69,6 +77,8 @@
         normalised.defaultSort = sm.getNormalisedSortValue(settings.defaultSort);
         normalised.rememberFilters = Boolean(settings.rememberFilters);
         normalised.defaultShowFavouritesInHistory = Boolean(settings.defaultShowFavouritesInHistory);
+        normalised.showConfigsFirst = Boolean(settings.showConfigsFirst);
+        normalised.defaultOpenTab = sm.getNormalisedPanelTabValue(settings.defaultOpenTab);
         return normalised;
     };
     sm.getNormalisedStoredEntryFilter = function (filter) {
@@ -120,6 +130,8 @@
         const defaultSortSelect = sm.panelContainer.querySelector('#sd-webui-sm-settings-default-sort');
         const rememberFiltersCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-remember-filters');
         const defaultShowFavouritesCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-default-show-favourites');
+        const showConfigsFirstCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-show-configs-first');
+        const defaultOpenTabSelect = sm.panelContainer.querySelector('#sd-webui-sm-settings-default-open-tab');
         if (smallViewEntriesInput) {
             smallViewEntriesInput.value = `${Math.max(1, Number(sm.uiSettings.smallViewEntriesPerPage) || entriesPerPage)}`;
         }
@@ -134,6 +146,12 @@
         }
         if (defaultShowFavouritesCheckbox) {
             defaultShowFavouritesCheckbox.checked = Boolean(sm.uiSettings.defaultShowFavouritesInHistory);
+        }
+        if (showConfigsFirstCheckbox) {
+            showConfigsFirstCheckbox.checked = Boolean(sm.uiSettings.showConfigsFirst);
+        }
+        if (defaultOpenTabSelect) {
+            defaultOpenTabSelect.value = sm.getNormalisedPanelTabValue(sm.uiSettings.defaultOpenTab);
         }
     };
     sm.saveUISettings = function () {
@@ -152,6 +170,16 @@
             showFavouritesInHistory: Boolean(sm.entryFilter.showFavouritesInHistory)
         });
     };
+    sm.applyDefaultOpenTab = function () {
+        const defaultOpenTab = sm.getNormalisedPanelTabValue(sm.uiSettings.defaultOpenTab);
+        sm.activePanelTab = defaultOpenTab;
+        if (defaultOpenTab == 'history' || defaultOpenTab == 'favourites') {
+            sm.entryFilter.group = defaultOpenTab;
+        }
+        sm.syncEntryFilterControls?.();
+        sm.syncPanelTabButtons?.();
+        sm.syncPanelTabVisibility?.();
+    };
     sm.applyLoadedPreferences = function () {
         const defaults = sm.getDefaultEntryFilter();
         const rememberedFilter = sm.uiSettings.rememberFilters ? sm.getNormalisedStoredEntryFilter(sm.loadedEntryFilter) : null;
@@ -160,9 +188,10 @@
         sm.entryFilter.query = rememberedFilter?.query ?? defaults.query;
         sm.entryFilter.sort = rememberedFilter?.sort ?? defaults.sort;
         sm.entryFilter.showFavouritesInHistory = rememberedFilter?.showFavouritesInHistory ?? defaults.showFavouritesInHistory;
-        sm.activePanelTab = sm.entryFilter.group;
+        sm.applyDefaultOpenTab();
         sm.syncUISettingsControls();
         sm.syncEntryFilterControls();
+        sm.syncNavTabOrder?.();
         sm.syncPanelTabButtons?.();
         sm.syncPanelTabVisibility?.();
         sm.syncPaginationInteractionState?.();
@@ -545,6 +574,7 @@
         const navTabs = sm.createElementWithClassList('div', 'tabs', 'gradio-tabs', sm.svelteClasses.tab);
         let showSavedConfigsToggle = null;
         let settingsPanel = null;
+        let navControlButtons = null;
         const panelTabButtons = {};
         const updateShowSavedConfigsToggleVisibility = () => {
             if (showSavedConfigsToggle) {
@@ -577,7 +607,7 @@
         createNavTab('History', 'history', 'history', true);
         createNavTab('Configs', 'favourites', 'favourites');
         createNavTab('Settings', 'settings', null);
-        const navControlButtons = sm.createElementWithClassList('div', 'sd-webui-sm-control');
+        navControlButtons = sm.createElementWithClassList('div', 'sd-webui-sm-control');
         navControlButtons.appendChild(quickSettingSaveButton);
         const navButtonMode = sm.createElementWithClassList('button', 'sd-webui-sm-inspector-mode');
         navControlButtons.appendChild(navButtonMode);
@@ -609,6 +639,20 @@
             sm.updateInspector();
         });
         navTabs.appendChild(navControlButtons);
+        sm.syncNavTabOrder = function () {
+            if (!navControlButtons) {
+                return;
+            }
+            const orderedTabs = sm.uiSettings.showConfigsFirst
+                ? ['favourites', 'history', 'settings']
+                : ['history', 'favourites', 'settings'];
+            for (const tabName of orderedTabs) {
+                const tabButton = panelTabButtons[tabName];
+                if (tabButton) {
+                    navTabs.insertBefore(tabButton, navControlButtons);
+                }
+            }
+        };
         nav.appendChild(navTabs);
         // Entry container
         const entryContainer = sm.createElementWithClassList('div', 'sd-webui-sm-entry-container');
@@ -819,6 +863,32 @@
             }
         });
         settingsList.appendChild(createSettingsRow('Show Saved Configs In History By Default', 'Controls whether configs are shown in History by default.', settingsDefaultShowFavourites));
+        const settingsShowConfigsFirst = document.createElement('input');
+        settingsShowConfigsFirst.id = 'sd-webui-sm-settings-show-configs-first';
+        settingsShowConfigsFirst.type = 'checkbox';
+        settingsShowConfigsFirst.addEventListener('change', () => {
+            sm.uiSettings.showConfigsFirst = settingsShowConfigsFirst.checked;
+            sm.saveUISettings();
+            sm.syncNavTabOrder?.();
+            sm.syncPanelTabButtons?.();
+        });
+        settingsList.appendChild(createSettingsRow('Show Configs First', 'Display the Configs tab before History.', settingsShowConfigsFirst));
+        const settingsDefaultOpenTab = document.createElement('select');
+        settingsDefaultOpenTab.id = 'sd-webui-sm-settings-default-open-tab';
+        settingsDefaultOpenTab.classList.add('sd-webui-sm-sort');
+        settingsDefaultOpenTab.innerHTML = `
+            <option value="history">History</option>
+            <option value="favourites">Configs</option>
+            <option value="settings">Settings</option>
+        `;
+        settingsDefaultOpenTab.addEventListener('change', () => {
+            sm.uiSettings.defaultOpenTab = sm.getNormalisedPanelTabValue(settingsDefaultOpenTab.value);
+            settingsDefaultOpenTab.value = sm.uiSettings.defaultOpenTab;
+            sm.saveUISettings();
+            sm.applyDefaultOpenTab();
+            sm.queueEntriesUpdate(0);
+        });
+        settingsList.appendChild(createSettingsRow('Default Open Tab', 'Tab to open when showing the panel.', settingsDefaultOpenTab));
         sm.syncPanelTabButtons = function () {
             for (const tabName in panelTabButtons) {
                 panelTabButtons[tabName].classList.toggle('selected', sm.activePanelTab == tabName);
@@ -831,6 +901,7 @@
             settingsPanel.style.display = showSettings ? 'block' : 'none';
             updateShowSavedConfigsToggleVisibility();
         };
+        sm.syncNavTabOrder();
         sm.syncPanelTabButtons();
         const createEntrySlot = () => {
             const entry = sm.createElementWithClassList('button', 'sd-webui-sm-entry');
@@ -962,6 +1033,7 @@
         const panelContainer = app.querySelector('.sd-webui-sm-panel-container');
         panelContainer.classList.toggle('open');
         if (panelContainer.classList.contains('open')) {
+            sm.applyDefaultOpenTab();
             sm.queueEntriesUpdate(0);
         }
         sm.syncModalOverlayState();
