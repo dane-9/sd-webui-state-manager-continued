@@ -348,7 +348,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         autosaveContainer.appendChild(autosaveLabel);
 
         autosaveCheckbox.addEventListener('change', () => {
-            sm.autoSaveHistory = !sm.autoSaveHistory;
+            sm.autoSaveHistory = autosaveCheckbox.checked;
 
             sm.ldb.set('sd-webui-state-manager-autosave', sm.autoSaveHistory);
         });

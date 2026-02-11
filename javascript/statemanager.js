@@ -210,7 +210,7 @@
         autosaveContainer.appendChild(autosaveCheckbox);
         autosaveContainer.appendChild(autosaveLabel);
         autosaveCheckbox.addEventListener('change', () => {
-            sm.autoSaveHistory = !sm.autoSaveHistory;
+            sm.autoSaveHistory = autosaveCheckbox.checked;
             sm.ldb.set('sd-webui-state-manager-autosave', sm.autoSaveHistory);
         });
         const navControlButtons = sm.createElementWithClassList('div', 'sd-webui-sm-control');
