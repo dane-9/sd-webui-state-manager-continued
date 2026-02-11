@@ -344,7 +344,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
             panel.appendChild(infoDiv);
             sm.panelContainer.appendChild(panel);
-            app.querySelector('.contain').appendChild(sm.panelContainer);
+            sm.mountPanelContainer();
 
             sm.panelContainer.classList.add('sd-webui-sm-modal-panel');
             sm.panelContainer.classList.add('open');
@@ -584,7 +584,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         panel.appendChild(sm.inspector);
     
         sm.panelContainer.appendChild(panel);
-        app.querySelector('.contain').appendChild(sm.panelContainer);
+        sm.mountPanelContainer();
     
         // Event listeners
         // app.querySelector('#txt2img_generate').addEventListener('click', () => sm.lastUsedState = sm.getCurrentState('txt2img'));
@@ -644,7 +644,31 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     }
 
     sm.toggle = function(){
+        sm.mountPanelContainer();
         app.querySelector('.sd-webui-sm-panel-container').classList.toggle('open');
+    }
+
+    sm.mountPanelContainer = function(): void{
+        if(!sm.panelContainer){
+            return;
+        }
+
+        const generationType = sm.utils.getCurrentGenerationTypeFromUI();
+        const resultsPanel = generationType ? app.querySelector(`#${generationType}_results_panel`) : null;
+
+        if(resultsPanel){
+            if(resultsPanel.nextElementSibling != sm.panelContainer){
+                resultsPanel.insertAdjacentElement('afterend', sm.panelContainer);
+            }
+
+            return;
+        }
+
+        const fallbackContainer = app.querySelector('.contain');
+
+        if(fallbackContainer && sm.panelContainer.parentNode != fallbackContainer){
+            fallbackContainer.appendChild(sm.panelContainer);
+        }
     }
 
     sm.getMode = function(){
@@ -1917,6 +1941,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
     // Stolen from `notification.js`, but can't use same `headImg`. Really wish webui had more callbacks
     sm.checkHeadImage = function(): void{
+        sm.mountPanelContainer();
+
         const galleryPreviews = sm.getGalleryPreviews();
 
         if (galleryPreviews == null) return;

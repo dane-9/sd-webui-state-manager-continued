@@ -214,7 +214,7 @@
             infoDiv.appendChild(buttonContainer);
             panel.appendChild(infoDiv);
             sm.panelContainer.appendChild(panel);
-            app.querySelector('.contain').appendChild(sm.panelContainer);
+            sm.mountPanelContainer();
             sm.panelContainer.classList.add('sd-webui-sm-modal-panel');
             sm.panelContainer.classList.add('open');
             return;
@@ -393,7 +393,7 @@
         panel.appendChild(entryContainer);
         panel.appendChild(sm.inspector);
         sm.panelContainer.appendChild(panel);
-        app.querySelector('.contain').appendChild(sm.panelContainer);
+        sm.mountPanelContainer();
         // Event listeners
         // app.querySelector('#txt2img_generate').addEventListener('click', () => sm.lastUsedState = sm.getCurrentState('txt2img'));
         // app.querySelector('#img2img_generate').addEventListener('click', () => sm.lastUsedState = sm.getCurrentState('img2img'));
@@ -438,7 +438,25 @@
         return container;
     };
     sm.toggle = function () {
+        sm.mountPanelContainer();
         app.querySelector('.sd-webui-sm-panel-container').classList.toggle('open');
+    };
+    sm.mountPanelContainer = function () {
+        if (!sm.panelContainer) {
+            return;
+        }
+        const generationType = sm.utils.getCurrentGenerationTypeFromUI();
+        const resultsPanel = generationType ? app.querySelector(`#${generationType}_results_panel`) : null;
+        if (resultsPanel) {
+            if (resultsPanel.nextElementSibling != sm.panelContainer) {
+                resultsPanel.insertAdjacentElement('afterend', sm.panelContainer);
+            }
+            return;
+        }
+        const fallbackContainer = app.querySelector('.contain');
+        if (fallbackContainer && sm.panelContainer.parentNode != fallbackContainer) {
+            fallbackContainer.appendChild(sm.panelContainer);
+        }
     };
     sm.getMode = function () {
         return sm.panelContainer.classList.contains('sd-webui-sm-modal-panel') ? 'modal' : 'docked';
@@ -1431,6 +1449,7 @@
     };
     // Stolen from `notification.js`, but can't use same `headImg`. Really wish webui had more callbacks
     sm.checkHeadImage = function () {
+        sm.mountPanelContainer();
         const galleryPreviews = sm.getGalleryPreviews();
         if (galleryPreviews == null)
             return;
