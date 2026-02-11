@@ -90,7 +90,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
     const app = gradioApp();
     const looselyEqualUIValues = new Set([null, undefined, "", "None"]);
-    const initialEntrySlotCount = 12;
+    const entriesPerPage = 25;
+    const initialEntrySlotCount = entriesPerPage;
     const updateEntriesDebounceMs = 150;
     const updateStorageDebounceMs = 600;
     
@@ -179,24 +180,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     }
 
     sm.getEntriesPerPage = function(): number{
-        const entries = sm.panelContainer?.querySelector('.sd-webui-sm-entries');
-
-        if(!entries){
-            return 1;
-        }
-
-        const entriesStyle = window.getComputedStyle(entries);
-        const gap = Number.parseFloat(entriesStyle.columnGap || entriesStyle.gap || '0') || 0;
-        const paddingLeft = Number.parseFloat(entriesStyle.paddingLeft || '0') || 0;
-        const paddingRight = Number.parseFloat(entriesStyle.paddingRight || '0') || 0;
-        const availableWidth = Math.max(entries.clientWidth - paddingLeft - paddingRight, 0);
-        const entryWidth = Math.max(Number.parseFloat(entriesStyle.getPropertyValue('--sm-entry-size') || '100') || 100, 1);
-
-        if(availableWidth <= 0){
-            return 1;
-        }
-
-        return Math.max(Math.floor((availableWidth + gap) / (entryWidth + gap)), 1);
+        return entriesPerPage;
     }
 
     sm.injectUI = function() {
@@ -214,11 +198,38 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             prompt: svelteClassFromSelector('#txt2img_prompt label')
         }
 
+        const quickSettingsButtonDock = sm.createElementWithClassList('div', 'sd-webui-sm-main-buttons');
+
+        sm.mountQuickSettingsButtons = function(): void{
+            const target = <HTMLElement | null>(
+                app.querySelector('#image_buttons_txt2img') ||
+                app.querySelector('#image_buttons_img2img') ||
+                app.querySelector('#quicksettings')
+            );
+
+            if(!target){
+                return;
+            }
+
+            if(target.id.startsWith('image_buttons_')){
+                if(quickSettingsButtonDock.parentNode != target || target.firstElementChild != quickSettingsButtonDock){
+                    target.prepend(quickSettingsButtonDock);
+                }
+
+                return;
+            }
+
+            if(quickSettingsButtonDock.parentNode != target){
+                target.appendChild(quickSettingsButtonDock);
+            }
+        }
+
         function createQuickSettingsButton(type, secondaryIconText, onClick){
             const quickSettingsButton = sm.createElementWithInnerTextAndClassList('button', '⌛', 'lg', 'sd-webui-sm-quicksettings-button', 'secondary', 'gradio-button', 'tool', sm.svelteClasses.button);
             quickSettingsButton.id = `sd-webui-sm-quicksettings-button-${type}`;
             quickSettingsButton.appendChild(sm.createElementWithInnerTextAndClassList('div', secondaryIconText, 'icon'));
-            app.querySelector('#quicksettings').appendChild(quickSettingsButton);
+            quickSettingsButtonDock.appendChild(quickSettingsButton);
+            sm.mountQuickSettingsButtons();
             quickSettingsButton.addEventListener('click', onClick);
 
             return quickSettingsButton;
@@ -257,6 +268,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         quickSettingSaveMenu.appendChild(quickSettingSaveCurrentButton);
         quickSettingSaveMenu.appendChild(quickSettingSaveGeneratedButton);
         quickSettingSaveButton.appendChild(quickSettingSaveMenu);
+        sm.mountQuickSettingsButtons();
 
         const quickSettingSaveButtonBlur = e => {
             if(!e.currentTarget.parentNode.contains(e.relatedTarget)){ // lost focus to an element outside the save buttons
@@ -653,8 +665,6 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         }
 
         sm.updateEntries();
-
-        window.addEventListener('resize', () => sm.queueEntriesUpdate(0));
 
         app.addEventListener('input', sm.updateAllValueDiffDatas);
         app.addEventListener('change', sm.updateAllValueDiffDatas);
@@ -2017,6 +2027,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     // Stolen from `notification.js`, but can't use same `headImg`. Really wish webui had more callbacks
     sm.checkHeadImage = function(): void{
         sm.mountPanelContainer();
+        sm.mountQuickSettingsButtons?.();
 
         const galleryPreviews = sm.getGalleryPreviews();
 

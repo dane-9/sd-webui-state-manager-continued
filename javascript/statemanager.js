@@ -9,7 +9,8 @@
                 setTimeout(function () { c.set(t, n, o); }, 50); }, delete: function (e, t) { s ? s.transaction("s", "readwrite").objectStore("s").delete(e).onsuccess = function (e) { t && t(); } : setTimeout(function () { c.delete(e, t); }, 50); }, list: function (t) { s ? s.transaction("s").objectStore("s").getAllKeys().onsuccess = function (e) { e = e.target.result || null; t(e); } : setTimeout(function () { c.list(t); }, 50); }, getAll: function (t) { s ? s.transaction("s").objectStore("s").getAll().onsuccess = function (e) { e = e.target.result || null; t(e); } : setTimeout(function () { c.getAll(t); }, 50); }, clear: function (t) { s ? s.transaction("s", "readwrite").objectStore("s").clear().onsuccess = function (e) { t && t(); } : setTimeout(function () { c.clear(t); }, 50); } }).get, set: c.set, delete: c.delete, list: c.list, getAll: c.getAll, clear: c.clear }, sm.ldb = t, "undefined" != typeof module && (module.exports = t)) : console.error("indexDB not supported"); }();
     const app = gradioApp();
     const looselyEqualUIValues = new Set([null, undefined, "", "None"]);
-    const initialEntrySlotCount = 12;
+    const entriesPerPage = 25;
+    const initialEntrySlotCount = entriesPerPage;
     const updateEntriesDebounceMs = 150;
     const updateStorageDebounceMs = 600;
     let entryEventListenerAbortController = new AbortController();
@@ -81,20 +82,7 @@
         }, delayMs);
     };
     sm.getEntriesPerPage = function () {
-        const entries = sm.panelContainer?.querySelector('.sd-webui-sm-entries');
-        if (!entries) {
-            return 1;
-        }
-        const entriesStyle = window.getComputedStyle(entries);
-        const gap = Number.parseFloat(entriesStyle.columnGap || entriesStyle.gap || '0') || 0;
-        const paddingLeft = Number.parseFloat(entriesStyle.paddingLeft || '0') || 0;
-        const paddingRight = Number.parseFloat(entriesStyle.paddingRight || '0') || 0;
-        const availableWidth = Math.max(entries.clientWidth - paddingLeft - paddingRight, 0);
-        const entryWidth = Math.max(Number.parseFloat(entriesStyle.getPropertyValue('--sm-entry-size') || '100') || 100, 1);
-        if (availableWidth <= 0) {
-            return 1;
-        }
-        return Math.max(Math.floor((availableWidth + gap) / (entryWidth + gap)), 1);
+        return entriesPerPage;
     };
     sm.injectUI = function () {
         // I really want to reuse some of the generated `svelte-xxxxxx` components, but these names have been known to change in the past (https://github.com/AUTOMATIC1111/stable-diffusion-webui/discussions/10076)
@@ -108,11 +96,30 @@
             checkbox: svelteClassFromSelector('input[type=checkbox]'),
             prompt: svelteClassFromSelector('#txt2img_prompt label')
         };
+        const quickSettingsButtonDock = sm.createElementWithClassList('div', 'sd-webui-sm-main-buttons');
+        sm.mountQuickSettingsButtons = function () {
+            const target = (app.querySelector('#image_buttons_txt2img') ||
+                app.querySelector('#image_buttons_img2img') ||
+                app.querySelector('#quicksettings'));
+            if (!target) {
+                return;
+            }
+            if (target.id.startsWith('image_buttons_')) {
+                if (quickSettingsButtonDock.parentNode != target || target.firstElementChild != quickSettingsButtonDock) {
+                    target.prepend(quickSettingsButtonDock);
+                }
+                return;
+            }
+            if (quickSettingsButtonDock.parentNode != target) {
+                target.appendChild(quickSettingsButtonDock);
+            }
+        };
         function createQuickSettingsButton(type, secondaryIconText, onClick) {
             const quickSettingsButton = sm.createElementWithInnerTextAndClassList('button', '⌛', 'lg', 'sd-webui-sm-quicksettings-button', 'secondary', 'gradio-button', 'tool', sm.svelteClasses.button);
             quickSettingsButton.id = `sd-webui-sm-quicksettings-button-${type}`;
             quickSettingsButton.appendChild(sm.createElementWithInnerTextAndClassList('div', secondaryIconText, 'icon'));
-            app.querySelector('#quicksettings').appendChild(quickSettingsButton);
+            quickSettingsButtonDock.appendChild(quickSettingsButton);
+            sm.mountQuickSettingsButtons();
             quickSettingsButton.addEventListener('click', onClick);
             return quickSettingsButton;
         }
@@ -142,6 +149,7 @@
         quickSettingSaveMenu.appendChild(quickSettingSaveCurrentButton);
         quickSettingSaveMenu.appendChild(quickSettingSaveGeneratedButton);
         quickSettingSaveButton.appendChild(quickSettingSaveMenu);
+        sm.mountQuickSettingsButtons();
         const quickSettingSaveButtonBlur = e => {
             if (!e.currentTarget.parentNode.contains(e.relatedTarget)) { // lost focus to an element outside the save buttons
                 quickSettingSaveMenu.style.display = 'none';
@@ -451,7 +459,6 @@
             return originaSubmitImg2img(...arguments);
         };
         sm.updateEntries();
-        window.addEventListener('resize', () => sm.queueEntriesUpdate(0));
         app.addEventListener('input', sm.updateAllValueDiffDatas);
         app.addEventListener('change', sm.updateAllValueDiffDatas);
     };
@@ -1513,6 +1520,7 @@
     // Stolen from `notification.js`, but can't use same `headImg`. Really wish webui had more callbacks
     sm.checkHeadImage = function () {
         sm.mountPanelContainer();
+        sm.mountQuickSettingsButtons?.();
         const galleryPreviews = sm.getGalleryPreviews();
         if (galleryPreviews == null)
             return;

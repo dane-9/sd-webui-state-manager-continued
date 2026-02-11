@@ -23,6 +23,18 @@
     position: relative;
 }
 
+.sd-webui-sm-main-buttons {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    order: -1;
+}
+
+#image_buttons_txt2img .sd-webui-sm-main-buttons,
+#image_buttons_img2img .sd-webui-sm-main-buttons {
+    margin-right: auto;
+}
+
 #sd-webui-sm-quicksettings-button-toggle .icon {
     position: absolute;
     bottom: 4px;
@@ -153,6 +165,10 @@
     /* transform-style: preserve-3d; */
 }
 
+.sd-webui-sm-panel-container.sd-webui-sm-modal-panel .sd-webui-sm-side-panel {
+    transition: none;
+}
+
 .sd-webui-sm-panel-container.open .sd-webui-sm-side-panel {
     width: auto;
     min-width: min(320px, 100%);
@@ -281,9 +297,14 @@
     flex-direction: row;
     flex-wrap: nowrap;
     gap: 3px;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
     padding: 0 5px;
     margin-top: 2px;
+}
+
+.sd-webui-sm-modal-panel .sd-webui-sm-entries {
+    display: flex;
 }
 
 .sd-webui-sm-entry {
