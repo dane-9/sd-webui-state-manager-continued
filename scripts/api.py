@@ -43,6 +43,25 @@ def sha256sum(filepath):
             h.update(mv[:n])
     return h.hexdigest()
 
+def get_quick_settings_names():
+    # WebUI variants expose quick settings differently (e.g. quicksettings_list, quicksettings, or opts.data values).
+    # Normalize all known shapes into a set of option names.
+    quicksettings_raw = getattr(shared.opts, "quicksettings_list", None)
+
+    if quicksettings_raw is None:
+        quicksettings_raw = getattr(shared.opts, "quicksettings", None)
+
+    if quicksettings_raw is None and hasattr(shared.opts, "data"):
+        quicksettings_raw = shared.opts.data.get("quicksettings_list") or shared.opts.data.get("quicksettings")
+
+    if isinstance(quicksettings_raw, str):
+        return {name.strip() for name in quicksettings_raw.split(",") if name.strip()}
+
+    if isinstance(quicksettings_raw, (list, tuple, set)):
+        return {str(name).strip() for name in quicksettings_raw if str(name).strip()}
+
+    return set()
+
 def state_manager_api(blocks: gr.Blocks, app: FastAPI):
     @app.get("/statemanager/version")
     async def version():
@@ -81,17 +100,18 @@ def state_manager_api(blocks: gr.Blocks, app: FastAPI):
     @app.get("/statemanager/quicksettings")
     async def get_quick_settings():
         # Model, VAE, CLIP and hypernetwork are such important and commonly changed settings, I feel they belong here no matter what
-        quick_settings_names = set(['sd_model_checkpoint', 'sd_vae', 'sd_hypernetwork', 'CLIP_stop_at_last_layers']).union(set(shared.opts.quicksettings_list))
+        quick_settings_names = set(['sd_model_checkpoint', 'sd_vae', 'sd_hypernetwork', 'CLIP_stop_at_last_layers']).union(get_quick_settings_names())
         
-        return {"settings": {s: getattr(shared.opts, s) for s in quick_settings_names}}
+        return {"settings": {s: getattr(shared.opts, s) for s in quick_settings_names if hasattr(shared.opts, s)}}
     
     @app.post("/statemanager/quicksettings")
     async def set_quick_settings(settings_json: ContentsDataModel):
         settings = json.loads(settings_json.contents)
 
         for name, value in settings.items():
-            print(f'setting shared.opts.{name} to {value}')
-            setattr(shared.opts, name, value)
+            if hasattr(shared.opts, name):
+                print(f'setting shared.opts.{name} to {value}')
+                setattr(shared.opts, name, value)
         
         return {"success": True}
 
