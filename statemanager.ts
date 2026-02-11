@@ -1376,13 +1376,28 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             }
 
             sm.componentMap = {};
+            const components = gradio_config.components || [];
+            const componentsById = new Map<number, any>();
+            const componentsByElemId = new Map<string, any>();
+
+            for(const component of components){
+                componentsById.set(component.id, component);
+
+                if(component.props.elem_id){
+                    componentsByElemId.set(component.props.elem_id, component);
+                }
+            }
 
             for(const path in response) { // {path: id}
-                const component = gradio_config.components.find(c => c.id == response[path]);
+                const component = componentsById.get(response[path]);
                 const pathParts = path.split('/');
 
                 if(pathParts[pathParts.length - 1] != 'value'){
                     continue; // Skip other settings like min/max if they sneak in here
+                }
+
+                if(!component){
+                    continue;
                 }
 
                 let data: MappedComponentData = {
@@ -1397,9 +1412,14 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
                 if(component.props.elem_id?.indexOf('controlnet_ControlNet-0_') > -1){
                     for(let i = 1; i < 3; i++){
                         const unitElemId = component.props.elem_id.replace('ControlNet-0_', `ControlNet-${i}_`);
+                        const unitComponent = componentsByElemId.get(unitElemId);
+
+                        if(!unitComponent){
+                            continue;
+                        }
 
                         data.entries.push({
-                            component: gradio_config.components.find(c => c.props.elem_id == unitElemId),
+                            component: unitComponent,
                             element: app.getElementById(unitElemId)
                         });
                     }
@@ -1415,11 +1435,11 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             const inputAccordions = document.querySelectorAll('#tab_txt2img .input-accordion, #tab_img2img .input-accordion');
 
             for(const accordion of inputAccordions){
-                const component = gradio_config.components.find(c => c.props.elem_id == accordion.id);
+                const component = componentsByElemId.get(accordion.id);
                 const checkbox: HTMLInputElement | null = <HTMLInputElement>accordion.parentElement!.querySelector(`#${accordion.id}-checkbox`);
                 const visibleCheckbox: HTMLInputElement | null = <HTMLInputElement>accordion.parentElement!.querySelector(`#${accordion.id}-visible-checkbox`);
 
-                if(!checkbox || !visibleCheckbox){
+                if(!component || !checkbox || !visibleCheckbox){
                     console.warn(`[State Manager] An input accordion with an unexpected layout or naming was found (id: ${accordion.id})`);
                     continue;
                 }
@@ -1447,9 +1467,11 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
                 };
             }
 
-            const settingComponents = gradio_config.components.filter(c => c.props.elem_id?.startsWith('setting_'));
+            for(const component of components) { // {path: id}
+                if(!component.props.elem_id?.startsWith('setting_')){
+                    continue;
+                }
 
-            for(const component of settingComponents) { // {path: id}
                 let data: MappedComponentData = {
                     entries: [{
                         component: component,
