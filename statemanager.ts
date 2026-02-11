@@ -97,7 +97,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     
     let entryEventListenerAbortController = new AbortController();
 
-    sm.autoSaveHistory = true;
+    sm.autoSaveHistory = false;
     sm.lastHeadImage = null;
     sm.lastUsedState = null;
 

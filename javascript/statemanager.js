@@ -14,7 +14,7 @@
         modal: 400
     };
     let entryEventListenerAbortController = new AbortController();
-    sm.autoSaveHistory = true;
+    sm.autoSaveHistory = false;
     sm.lastHeadImage = null;
     sm.lastUsedState = null;
     sm.ldb.get('sd-webui-state-manager-autosave', autosave => {

@@ -23,9 +23,9 @@ Clicking on an entry will show its settings in the inspector, and you can apply 
 
 You can also multi-select entries by holding `ctrl` or the meta key (`⌘` on MacOS), or range select by holding shift.
 
-By default auto-save is on, and every time you generate an image in either txt2img or img2img the state is saved to the history, and a small 100x100 thumbnail is saved alongside it.
+By default auto-save is off. If you enable it, every time you generate an image in either txt2img or img2img the state is saved to the history, and a small 100x100 thumbnail is saved alongside it.
 
-If you'd rather save your entries manually, just turn off the toggle in the state browser panel, and use the second button on the top (⌛💾) to add them that way.
+If you'd rather save your entries manually, leave auto-save off and use the second button on the top (⌛💾) to add them that way.
 
 # Installation
 
