@@ -409,6 +409,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             sm.panelContainer.classList.toggle('sd-webui-sm-modal-panel');
 
             if(sm.panelContainer.classList.contains('sd-webui-sm-modal-panel')){
+                sm.ensureEntrySlotCount(maxEntriesPerPage.modal);
                 sm.goToPage(Math.floor(sm.currentPage / (maxEntriesPerPage.modal / maxEntriesPerPage.docked)));
             }
             else{
@@ -514,7 +515,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         entryContainer.appendChild(entries);
         entryContainer.appendChild(entryFooter);
 
-        for(let i = 0; i < maxEntriesPerPage.modal; i++){ // Max amount of entries per page
+        const createEntrySlot = (): Entry => {
             const entry = sm.createElementWithClassList('button', 'sd-webui-sm-entry');
             entry.style.display = 'none';
 
@@ -526,8 +527,17 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
             entry.appendChild(footer);
 
-            entries.appendChild(entry);
+            return <Entry>entry;
+        };
+
+        sm.ensureEntrySlotCount = function(minCount: number): void{
+            while(entries.childNodes.length < minCount){
+                entries.appendChild(createEntrySlot());
+            }
         }
+
+        // Create only what docked mode needs first; modal capacity is created lazily.
+        sm.ensureEntrySlotCount(maxEntriesPerPage.docked);
 
         const getEntryFromEvent = (event: Event): Entry | null => {
             if(!(event.target instanceof Element)){
@@ -660,6 +670,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
         const currentMaxEntriesPerPage = maxEntriesPerPage[sm.getMode()];
         const entries = sm.panelContainer.querySelector('.sd-webui-sm-entries');        
+        sm.ensureEntrySlotCount(currentMaxEntriesPerPage);
         const filteredData = Object.fromEntries(Object.entries(sm.memoryStorage.entries.data).filter(kv => sm.entryFilter.matches(kv[1])));
         const filteredKeys = Object.keys(filteredData).sort().reverse();
         const numPages = Math.max(Math.ceil(filteredKeys.length / currentMaxEntriesPerPage), 1);
@@ -723,7 +734,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             sm.updateEntryIndicators(entry);
         }
 
-        for(let i = numEntries; i < maxEntriesPerPage.modal; i++){
+        for(let i = numEntries; i < entries.childNodes.length; i++){
             entries.childNodes[i].style.display = 'none';
         }
     }
@@ -1800,7 +1811,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             
             return response.settings;
         })
-        .catch(e => sm.utils.logResponseError("[State Manager] Getting State Manager version failed with error", e));
+        .catch(e => sm.utils.logResponseError("[State Manager] Getting quicksettings failed with error", e));
     }
 
     sm.getComponentSettings = function(type: GenerationType, changedOnly = true): {[path: string]: any}{

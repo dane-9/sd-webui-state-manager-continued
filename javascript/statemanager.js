@@ -258,6 +258,7 @@
         navButtonMode.addEventListener('click', () => {
             sm.panelContainer.classList.toggle('sd-webui-sm-modal-panel');
             if (sm.panelContainer.classList.contains('sd-webui-sm-modal-panel')) {
+                sm.ensureEntrySlotCount(maxEntriesPerPage.modal);
                 sm.goToPage(Math.floor(sm.currentPage / (maxEntriesPerPage.modal / maxEntriesPerPage.docked)));
             }
             else {
@@ -338,7 +339,7 @@
         entryContainer.appendChild(entryHeader);
         entryContainer.appendChild(entries);
         entryContainer.appendChild(entryFooter);
-        for (let i = 0; i < maxEntriesPerPage.modal; i++) { // Max amount of entries per page
+        const createEntrySlot = () => {
             const entry = sm.createElementWithClassList('button', 'sd-webui-sm-entry');
             entry.style.display = 'none';
             entry.appendChild(sm.createElementWithClassList('div', 'type'));
@@ -346,8 +347,15 @@
             footer.appendChild(sm.createElementWithClassList('div', 'date'));
             footer.appendChild(sm.createElementWithClassList('div', 'time'));
             entry.appendChild(footer);
-            entries.appendChild(entry);
-        }
+            return entry;
+        };
+        sm.ensureEntrySlotCount = function (minCount) {
+            while (entries.childNodes.length < minCount) {
+                entries.appendChild(createEntrySlot());
+            }
+        };
+        // Create only what docked mode needs first; modal capacity is created lazily.
+        sm.ensureEntrySlotCount(maxEntriesPerPage.docked);
         const getEntryFromEvent = (event) => {
             if (!(event.target instanceof Element)) {
                 return null;
@@ -450,6 +458,7 @@
         entryEventListenerAbortController = new AbortController();
         const currentMaxEntriesPerPage = maxEntriesPerPage[sm.getMode()];
         const entries = sm.panelContainer.querySelector('.sd-webui-sm-entries');
+        sm.ensureEntrySlotCount(currentMaxEntriesPerPage);
         const filteredData = Object.fromEntries(Object.entries(sm.memoryStorage.entries.data).filter(kv => sm.entryFilter.matches(kv[1])));
         const filteredKeys = Object.keys(filteredData).sort().reverse();
         const numPages = Math.max(Math.ceil(filteredKeys.length / currentMaxEntriesPerPage), 1);
@@ -498,7 +507,7 @@
             entry.querySelector('.time').innerText = `${creationDate.getHours().toString().padStart(2, '0')}:${creationDate.getMinutes().toString().padStart(2, '0')}:${creationDate.getSeconds().toString().padStart(2, '0')}`;
             sm.updateEntryIndicators(entry);
         }
-        for (let i = numEntries; i < maxEntriesPerPage.modal; i++) {
+        for (let i = numEntries; i < entries.childNodes.length; i++) {
             entries.childNodes[i].style.display = 'none';
         }
     };
@@ -1345,7 +1354,7 @@
             }
             return response.settings;
         })
-            .catch(e => sm.utils.logResponseError("[State Manager] Getting State Manager version failed with error", e));
+            .catch(e => sm.utils.logResponseError("[State Manager] Getting quicksettings failed with error", e));
     };
     sm.getComponentSettings = function (type, changedOnly = true) {
         let settings = {};
