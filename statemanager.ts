@@ -37,7 +37,12 @@ interface State {
     quickSettings: any,
     componentSettings: any,
     // addedSettings, face rstore, face restore model, tiling
-    preview: string
+    preview: string,
+    inspectorState?: SavedInspectorState
+}
+
+interface SavedInspectorState {
+    checkboxes?: {[key: string]: boolean}
 }
 
 interface StoredData { // As stored on disk, either in file or IDB
@@ -70,6 +75,17 @@ interface EntrySelection {
 
 interface Entry extends HTMLElement {
     data: State
+}
+
+interface ActiveProfileDraft {
+    stateKey: string,
+    originalName: string,
+    name: string,
+    originalIsFavourite: boolean,
+    isFavourite: boolean,
+    originalInspectorState: SavedInspectorState,
+    inspectorState: SavedInspectorState,
+    dirty: boolean
 }
 
 interface InspectorParameter extends HTMLElement {
@@ -180,6 +196,219 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         }, delayMs);
     }
 
+    sm.getNormalisedInspectorState = function(state: State): SavedInspectorState{
+        const inspectorState = (state.inspectorState && typeof state.inspectorState === 'object') ? state.inspectorState : {};
+        const checkboxes = (inspectorState.checkboxes && typeof inspectorState.checkboxes === 'object') ? inspectorState.checkboxes : {};
+
+        return {
+            checkboxes: {...checkboxes}
+        };
+    }
+
+    sm.areBooleanMapsEqual = function(a: {[key: string]: boolean}, b: {[key: string]: boolean}): boolean{
+        const keys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+
+        for(const key of keys){
+            if(Boolean(a?.[key]) !== Boolean(b?.[key])){
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    sm.ensureActiveProfileDraft = function(entry: Entry): ActiveProfileDraft{
+        const stateKey = `${entry.data.createdAt ?? ''}`;
+
+        if(sm.activeProfileDraft?.stateKey === stateKey){
+            return sm.activeProfileDraft;
+        }
+
+        const originalInspectorState = sm.getNormalisedInspectorState(entry.data);
+        const isFavourite = (entry.data.groups?.indexOf('favourites') ?? -1) > -1;
+
+        sm.activeProfileDraft = {
+            stateKey,
+            originalName: `${entry.data.name ?? ''}`,
+            name: `${entry.data.name ?? ''}`,
+            originalIsFavourite: isFavourite,
+            isFavourite,
+            originalInspectorState,
+            inspectorState: {
+                checkboxes: {...originalInspectorState.checkboxes},
+            },
+            dirty: false
+        };
+
+        return sm.activeProfileDraft;
+    }
+
+    sm.refreshActiveProfileDraftState = function(): void{
+        const draft: ActiveProfileDraft | null = sm.activeProfileDraft || null;
+
+        if(!draft){
+            return;
+        }
+
+        const hasNameChanges = `${draft.name ?? ''}` !== `${draft.originalName ?? ''}`;
+        const hasFavouriteChanges = draft.isFavourite !== draft.originalIsFavourite;
+        const hasCheckboxChanges = !sm.areBooleanMapsEqual(draft.inspectorState.checkboxes || {}, draft.originalInspectorState.checkboxes || {});
+
+        draft.dirty = hasNameChanges || hasFavouriteChanges || hasCheckboxChanges;
+
+        if(Array.isArray(sm.activeProfileSaveButtons)){
+            for(const button of sm.activeProfileSaveButtons){
+                button.disabled = !draft.dirty;
+            }
+        }
+    }
+
+    sm.getActiveProfileCheckboxState = function(settingKey: string, defaultValue = true): boolean{
+        const draft: ActiveProfileDraft | null = sm.activeProfileDraft || null;
+        
+        if(!draft || !settingKey){
+            return defaultValue;
+        }
+
+        if(draft.inspectorState.checkboxes.hasOwnProperty(settingKey)){
+            return Boolean(draft.inspectorState.checkboxes[settingKey]);
+        }
+
+        return defaultValue;
+    }
+
+    sm.setActiveProfileCheckboxState = function(settingKey: string, value: boolean): void{
+        const draft: ActiveProfileDraft | null = sm.activeProfileDraft || null;
+
+        if(!draft || !settingKey){
+            return;
+        }
+
+        if(value){
+            delete draft.inspectorState.checkboxes[settingKey];
+        }
+        else{
+            draft.inspectorState.checkboxes[settingKey] = false;
+        }
+
+        sm.refreshActiveProfileDraftState();
+    }
+
+    sm.confirmDiscardPendingProfileChanges = function(): boolean{
+        const draft: ActiveProfileDraft | null = sm.activeProfileDraft || null;
+
+        if(!draft || !draft.dirty){
+            return true;
+        }
+
+        const shouldDiscard = confirm("You have unsaved changes for this profile. Discard them and continue?");
+
+        if(shouldDiscard){
+            sm.activeProfileDraft = null;
+        }
+
+        return shouldDiscard;
+    }
+
+    sm.getGroupsWithFavouriteState = function(groups: Group[], isFavourite: boolean): Group[]{
+        const groupSet = new Set<Group>(groups || []);
+
+        if(isFavourite){
+            groupSet.add('favourites');
+        }
+        else{
+            groupSet.delete('favourites');
+        }
+
+        if(groupSet.size == 0){
+            groupSet.add('history');
+        }
+
+        return Array.from(groupSet);
+    }
+
+    sm.upsertState = function(state: State): State{
+        const stateClone: State = JSON.parse(JSON.stringify(state));
+        stateClone.createdAt = Date.now();
+
+        while(sm.memoryStorage.entries.data.hasOwnProperty(`${stateClone.createdAt}`)){
+            stateClone.createdAt++;
+        }
+
+        sm.memoryStorage.entries.data[stateClone.createdAt] = stateClone;
+        sm.memoryStorage.entries.updateKeys();
+        sm.updateStorage();
+
+        return stateClone;
+    }
+
+    sm.saveActiveProfileChanges = function(): void{
+        if(sm.selection.entries.length != 1){
+            return;
+        }
+
+        const entry = sm.selection.entries[0];
+        const draft: ActiveProfileDraft = sm.ensureActiveProfileDraft(entry);
+
+        if(!draft.dirty){
+            return;
+        }
+
+        const nameChanged = `${draft.name ?? ''}` !== `${draft.originalName ?? ''}`;
+        let saveMode: 'overwrite' | 'new' = 'overwrite';
+
+        if(nameChanged){
+            saveMode = 'new';
+        }
+        else{
+            const overwrite = confirm("Overwrite this profile with your changes?\nPress Cancel to save as a new profile instead.");
+            saveMode = overwrite ? 'overwrite' : 'new';
+        }
+
+        const assignDraftData = (targetState: State, baseGroups: Group[]) => {
+            const finalName = `${draft.name ?? ''}`.trim();
+
+            if(finalName.length > 0){
+                targetState.name = finalName;
+            }
+            else{
+                delete targetState.name;
+            }
+
+            targetState.groups = sm.getGroupsWithFavouriteState(baseGroups, draft.isFavourite);
+            targetState.inspectorState = {
+                checkboxes: {...(draft.inspectorState.checkboxes || {})}
+            };
+        };
+
+        if(saveMode == 'overwrite'){
+            assignDraftData(entry.data, entry.data.groups || []);
+            sm.activeProfileDraft = null;
+            sm.updateStorage();
+            sm.updateEntryIndicators(entry);
+            sm.updateEntries();
+            sm.updateInspector();
+            return;
+        }
+
+        const newState = <State>JSON.parse(JSON.stringify(entry.data));
+        assignDraftData(newState, entry.data.groups || []);
+        const savedState = sm.upsertState(newState);
+
+        sm.activeProfileDraft = null;
+        sm.updateEntries();
+
+        const entries = sm.panelContainer.querySelector('.sd-webui-sm-entries');
+        const targetEntry = <Entry | undefined>Array.from(entries.childNodes).find((candidate: Entry) => `${candidate?.data?.createdAt ?? ''}` == `${savedState.createdAt}`);
+
+        if(targetEntry){
+            sm.selection.select(targetEntry, 'single');
+        }
+        else{
+            sm.updateInspector();
+        }
+    }
+
     sm.getEntriesPerPage = function(): number{
         return entriesPerPage;
     }
@@ -195,7 +424,6 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         }
 
         sm.inspectorAccordionState = sm.inspectorAccordionState || {};
-
         for(const accordion of sm.inspector.querySelectorAll('.sd-webui-sm-inspector-category')){
             const sectionLabel = `${accordion.querySelector('.label')?.textContent ?? ''}`.trim();
 
@@ -433,6 +661,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             sm.panelContainer.classList.add('sd-webui-sm-modal-panel');
             sm.mountPanelContainer();
             sm.syncModalOverlayState();
+            sm.updateInspector();
         });
 
         panel.addEventListener('click', e => e.stopPropagation());
@@ -441,6 +670,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
                 sm.panelContainer.classList.remove('sd-webui-sm-modal-panel');
                 sm.mountPanelContainer();
                 sm.syncModalOverlayState();
+                sm.updateInspector();
             }
         });
 
@@ -454,6 +684,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             sm.panelContainer.classList.remove('sd-webui-sm-modal-panel');
             sm.mountPanelContainer();
             sm.syncModalOverlayState();
+            sm.updateInspector();
         });
 
         navTabs.appendChild(navControlButtons);
@@ -620,6 +851,14 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
                 return;
             }
 
+            const currentSelectedEntry = sm.selection.entries.length == 1 ? sm.selection.entries[0] : null;
+
+            if(currentSelectedEntry && currentSelectedEntry != entry){
+                if(!sm.confirmDiscardPendingProfileChanges()){
+                    return;
+                }
+            }
+
             if(event.shiftKey){
                 sm.selection.select(entry, 'range');
             }
@@ -675,6 +914,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             sm.panelContainer.classList.remove('sd-webui-sm-modal-panel');
             sm.mountPanelContainer();
             sm.syncModalOverlayState();
+            sm.updateInspector();
             event.preventDefault();
         });
 
@@ -768,6 +1008,11 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     }
 
     sm.goToPage = function(page){
+        if(!sm.confirmDiscardPendingProfileChanges()){
+            sm.pageNumberInput.value = sm.currentPage + 1;
+            return;
+        }
+
         sm.currentPage = page;
         sm.pageNumberInput.value = page + 1;
         
@@ -887,11 +1132,14 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     sm.updateInspector = async function(){
         sm.captureInspectorAccordionState?.();
         sm.inspector.innerHTML = "";
+        sm.activeProfileSaveButtons = [];
 
         if(sm.selection.entries.length == 0){
+            sm.activeProfileDraft = null;
             return;
         }
         else if(sm.selection.entries.length > 1){
+            sm.activeProfileDraft = null;
             const multiSelectContainer = sm.createElementWithClassList('div', 'category', 'meta-container');
             const favouriteAllButton = sm.createElementWithInnerTextAndClassList('button', `♥ Favourite all ${sm.selection.entries.length} selected items`, 'sd-webui-sm-inspector-wide-button', 'sd-webui-sm-inspector-load-button');
             const deleteAllButton = sm.createElementWithInnerTextAndClassList('button', `🗑 Delete all ${sm.selection.entries.length} selected items`, 'sd-webui-sm-inspector-wide-button', 'sd-webui-sm-inspector-load-button');
@@ -919,27 +1167,36 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         }
         
         const entry = sm.selection.entries[0];
+        const activeDraft: ActiveProfileDraft = sm.ensureActiveProfileDraft(entry);
 
         const metaContainer = sm.createElementWithClassList('div', 'category', 'meta-container');
         const nameField = document.createElement('input');
         nameField.placeholder = "Give this config a name";
         nameField.type = 'text';
-        nameField.value = entry.data.name || '';
+        nameField.value = activeDraft.name || '';
         
         const favButton = sm.createElementWithInnerTextAndClassList('button', '♥', 'sd-webui-sm-inspector-fav-button');
         const deleteButton = sm.createElementWithInnerTextAndClassList('button', '🗑', 'sd-webui-sm-inspector-delete-button');
-        const loadAllButton = sm.createElementWithInnerTextAndClassList('button', 'Load all', 'sd-webui-sm-inspector-load-all-button', 'sd-webui-sm-inspector-load-button');
+        const saveChangesButton = <HTMLButtonElement>sm.createElementWithInnerTextAndClassList('button', 'Save Changes', 'sd-webui-sm-inspector-save-button', 'sd-webui-sm-inspector-load-button');
+        const loadAllButton = sm.createElementWithInnerTextAndClassList('button', 'Apply Selected', 'sd-webui-sm-inspector-load-all-button', 'sd-webui-sm-inspector-load-button');
 
         favButton.title = "Add this entry to your favourites";
         deleteButton.title = "Delete this entry (warning: this cannot be undone)";
-        loadAllButton.title = "Apply all settings to the current UI";
+        saveChangesButton.title = "Save edited profile settings";
+        loadAllButton.title = "Apply selected settings to the current UI";
 
-        favButton.classList.toggle('on', entry.data.groups && entry.data.groups.indexOf('favourites') > -1);
+        favButton.classList.toggle('on', activeDraft.isFavourite);
+        saveChangesButton.disabled = !activeDraft.dirty;
 
         metaContainer.appendChild(nameField);
         metaContainer.appendChild(favButton);
         metaContainer.appendChild(deleteButton);
+        metaContainer.appendChild(saveChangesButton);
         metaContainer.appendChild(loadAllButton);
+
+        if(sm.getMode() == 'modal'){
+            metaContainer.removeChild(saveChangesButton);
+        }
 
         const viewSettingsContainer = sm.createElementWithClassList('div', 'category', 'view-settings-container');
         viewSettingsContainer.appendChild(sm.createPillToggle('', {title: "Color-code properties (green = unchanged, orange = missing from current UI, red = different from current UI)", id: 'sd-webui-sm-inspector-view-coloured-labels'}, 'sd-webui-sm-inspector-view-coloured-labels-checkbox', true, (isOn: boolean) => sm.inspector.dataset['useColorCode'] = isOn, true));
@@ -948,27 +1205,16 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         viewSettingsContainer.appendChild(sm.createPillToggle('Try applying missing/obsolete', {title: "Try applying the values of missing properties", id: 'sd-webui-sm-inspector-apply-missing'}, 'sd-webui-sm-inspector-apply-missing-checkbox', false, (isOn: boolean) => sm.inspector.dataset['applyMissing'] = isOn, true));
 
         const nameInputCallback = () => {
-            sm.setStateName(entry.data.createdAt, nameField.value);
-            sm.updateEntryIndicators(entry);
-        };
-
-        const nameCommitCallback = () => {
-            nameInputCallback();
-            sm.queueStorageUpdate(0);
+            activeDraft.name = nameField.value;
+            sm.refreshActiveProfileDraftState();
         };
 
         nameField.addEventListener('input', nameInputCallback);
-        nameField.addEventListener('change', nameCommitCallback);
 
         favButton.addEventListener('click', () => {
-            if(!entry.data.groups || entry.data.groups.indexOf('favourites') == -1){
-                sm.addStateToGroup(entry.data.createdAt, 'favourites');
-            }
-            else{
-                sm.removeStateFromGroup(entry.data.createdAt, 'favourites');
-            }
-
-            sm.updateEntryIndicators(entry);
+            activeDraft.isFavourite = !activeDraft.isFavourite;
+            favButton.classList.toggle('on', activeDraft.isFavourite);
+            sm.refreshActiveProfileDraftState();
         });
 
         deleteButton.addEventListener('click', () => {
@@ -980,10 +1226,20 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             }
         });
 
-        loadAllButton.addEventListener('click', () => sm.applyAll(entry.data));
+        saveChangesButton.addEventListener('click', () => sm.saveActiveProfileChanges());
+
+        loadAllButton.addEventListener('click', () => {
+            for(const param of sm.inspector.querySelectorAll('.sd-webui-sm-inspector-param:has(:checked)')){
+                param.apply?.();
+            }
+        });
 
         sm.inspector.appendChild(metaContainer);
         sm.inspector.appendChild(viewSettingsContainer);
+        
+        if(sm.getMode() != 'modal'){
+            sm.activeProfileSaveButtons.push(saveChangesButton);
+        }
         
         const quickSettingLabelRenames = {
             'sd_model_checkpoint': 'Checkpoint',
@@ -998,7 +1254,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         const miscQuickSettings = Object.keys(entryQuickSettings).filter(k => mandatoryQuickSettings.indexOf(k) == -1);
 
         function createQuickSetting(label: string, settingPath: string): HTMLElement{
-            const quickSettingParameter = sm.createInspectorParameter(label, entryQuickSettings[settingPath], () => sm.applyQuickParameters(entryQuickSettings, settingPath));
+            const quickSettingParameter = sm.createInspectorParameter(label, entryQuickSettings[settingPath], () => sm.applyQuickParameters(entryQuickSettings, settingPath), undefined, `quick/${settingPath}`);
             
             if(sm.componentMap.hasOwnProperty(settingPath)){
                 quickSettingParameter.dataset['valueDiff'] = (sm.componentMap[settingPath].entries[0].component.instance.$$.ctx[0] == entryQuickSettings[settingPath] ? 'same' : 'changed');
@@ -1047,18 +1303,18 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             settingPaths.forEach(curatedSettingNames.add.bind(curatedSettingNames));
 
             const valueMap = settingPaths.reduce((values, settingPath) => {values[settingPath] = getSavedValue(settingPath); return values;}, {});
-            const param = sm.createInspectorParameter(label, displayValueFormatter(valueMap), () => sm.applyComponentSettings(valueMap), () => sm.setValueDiffAttribute(param, ...Object.keys(valueMap).map(p => ({path: p, value: valueMap[p]}))));
+            const param = sm.createInspectorParameter(label, displayValueFormatter(valueMap), () => sm.applyComponentSettings(valueMap), () => sm.setValueDiffAttribute(param, ...Object.keys(valueMap).map(p => ({path: p, value: valueMap[p]}))), `component/${settingPaths.join('|')}`);
 
             param.update();
             
             return param;
         }
 
-        function _createGenerationInspectorParameter(label: string, settingPath: string, factory: (label: string, settingPath: string, onUse: (settings: any) => void, onUIUpdate: () => void) => InspectorParameter): HTMLElement{
+        function _createGenerationInspectorParameter(label: string, settingPath: string, factory: (label: string, settingPath: string, onUse: (settings: any) => void, onUIUpdate: () => void, checkboxKey?: string) => InspectorParameter): HTMLElement{
             curatedSettingNames.add(settingPath);
 
             const value = getSavedValue(settingPath);
-            const parameter = factory(label, value, () => sm.applyComponentSettings({[settingPath]: value}), () => sm.setValueDiffAttribute(parameter, {path: settingPath, value: value}));
+            const parameter = factory(label, value, () => sm.applyComponentSettings({[settingPath]: value}), () => sm.setValueDiffAttribute(parameter, {path: settingPath, value: value}), `component/${settingPath}`);
 
             parameter.update();
 
@@ -1220,6 +1476,20 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
             sm.inspector.appendChild(sm.createInspectorSettingsAccordion(prettyLabelName, explicitSectionData));
         }
+
+        if(sm.getMode() == 'modal'){
+            const stickyActionContainer = sm.createElementWithClassList('sd-webui-sm-inspector-save-sticky');
+            const stickySaveButton = <HTMLButtonElement>sm.createElementWithInnerTextAndClassList('button', 'Save Changes', 'sd-webui-sm-inspector-save-button', 'sd-webui-sm-inspector-load-button');
+            stickySaveButton.title = "Save edited profile settings";
+            stickySaveButton.disabled = !activeDraft.dirty;
+            stickySaveButton.addEventListener('click', () => sm.saveActiveProfileChanges());
+            stickyActionContainer.appendChild(loadAllButton);
+            stickyActionContainer.appendChild(stickySaveButton);
+            sm.inspector.appendChild(stickyActionContainer);
+            sm.activeProfileSaveButtons.push(stickySaveButton);
+        }
+
+        sm.refreshActiveProfileDraftState();
     }
 
     sm.setValueDiffAttribute = function(element: HTMLElement, ...settings: {path: string, value: any}[]): void{
@@ -1286,7 +1556,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         const accordion = sm.createElementWithClassList('div', 'sd-webui-sm-inspector-category', 'block', 'gradio-accordion');
         const sectionLabel = `${label}`.trim();
         
-        accordion.appendChild(sm.createInspectorLabel(label));
+        accordion.appendChild(sm.createInspectorLabel(label, `accordion/${sectionLabel}`));
         accordion.appendChild(sm.createElementWithInnerTextAndClassList('span', '▼', 'foldout'))
         
         let content = data;
@@ -1297,7 +1567,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             for(const settingPath in data){
                 const parameter = sm.createInspectorParameter(settingPath.split('/').slice(1).join('/'), data[settingPath], () => {
                     sm.applyComponentSettings({[settingPath]: data[settingPath]});
-                });
+                }, undefined, `component/${settingPath}`);
 
                 sm.setValueDiffAttribute(parameter, {path: settingPath, value: data[settingPath]});
                 content.appendChild(parameter);
@@ -1339,7 +1609,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         return accordion;
     }
 
-    sm.createInspectorPromptSection = function(label: string, prompt: string, onUse: () => void, onUIUpdate: () => void){
+    sm.createInspectorPromptSection = function(label: string, prompt: string, onUse: () => void, onUIUpdate: () => void, checkboxKey?: string){
         const promptContainer = sm.createElementWithClassList('div', 'prompt-container', 'sd-webui-sm-inspector-param', sm.svelteClasses.prompt);
         promptContainer.apply = onUse;
         promptContainer.update = onUIUpdate;
@@ -1356,7 +1626,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         promptButtons.appendChild(sm.createCopyButton(prompt));
         // promptButtons.appendChild(viewPromptButton);
 
-        promptContainer.appendChild(sm.createInspectorLabel(label));
+        promptContainer.appendChild(sm.createInspectorLabel(label, checkboxKey));
         promptContainer.appendChild(promptField);
         promptContainer.appendChild(promptButtons);
 
@@ -1413,13 +1683,22 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         return sm.createInspectorSideButton('📄', "Copy to clipboard", () => navigator.clipboard.writeText(value.toString())); //alt 📋
     }
 
-    sm.createInspectorLabel = function(label: string): HTMLElement{
+    sm.createInspectorLabel = function(label: string, checkboxKey?: string, defaultChecked = true): HTMLElement{
         const labelWithCheckbox = sm.createElementWithClassList('span', 'label-container');
 
         const checkbox = sm.createElementWithClassList('input', 'param-checkbox', sm.svelteClasses.checkbox);
         checkbox.type = 'checkbox';
-        checkbox.checked = true;
+        checkbox.checked = sm.getActiveProfileCheckboxState(checkboxKey, defaultChecked);
+
+        if(checkboxKey){
+            checkbox.dataset['profileSettingKey'] = checkboxKey;
+        }
+
         checkbox.addEventListener('click', e => e.stopPropagation());
+        checkbox.addEventListener('change', e => {
+            sm.setActiveProfileCheckboxState(checkbox.dataset['profileSettingKey'], checkbox.checked);
+            e.stopPropagation();
+        });
         labelWithCheckbox.appendChild(checkbox);
 
         labelWithCheckbox.appendChild(sm.createElementWithInnerTextAndClassList('span', label, 'label'));
@@ -1427,12 +1706,12 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         return labelWithCheckbox;
     }
 
-    sm.createInspectorParameter = function(label: string, value: any, onUse: () => void, onUIUpdate: () => void): HTMLElement{
+    sm.createInspectorParameter = function(label: string, value: any, onUse: () => void, onUIUpdate?: () => void, checkboxKey?: string): HTMLElement{
         const paramContainer = sm.createElementWithClassList('div', 'sd-webui-sm-inspector-param');
         paramContainer.apply = onUse;
-        paramContainer.update = onUIUpdate;
+        paramContainer.update = onUIUpdate || (() => {});
 
-        paramContainer.appendChild(sm.createInspectorLabel(label));
+        paramContainer.appendChild(sm.createInspectorLabel(label, checkboxKey));
         paramContainer.appendChild(sm.createInspectorParameterSection(value, onUse));
 
         return paramContainer;
@@ -2353,6 +2632,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     onAfterUiUpdate(sm.checkHeadImage);
 })(window.stateManager = window.stateManager || {
     componentMap: {},
+    activeProfileDraft: null,
+    activeProfileSaveButtons: [],
     memoryStorage: {
         currentDefault: null,
         savedDefaults: null,
@@ -2385,6 +2666,14 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             };
 
             this.selectedStateKeys = this.selectedStateKeys || new Set<string>();
+
+            const currentSingleSelection = this.entries.length == 1 ? this.entries[0] : null;
+
+            if(type == 'single' && currentSingleSelection && currentSingleSelection != entry){
+                if(!window.stateManager.confirmDiscardPendingProfileChanges()){
+                    return;
+                }
+            }
 
             switch(type){
                 case 'single':

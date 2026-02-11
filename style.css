@@ -917,6 +917,17 @@ body.sd-webui-sm-resizing {
     margin-left: 5px;
 }
 
+.sd-webui-sm-inspector .sd-webui-sm-inspector-save-button,
+.sd-webui-sm-inspector .sd-webui-sm-inspector-load-all-button {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+}
+
+.sd-webui-sm-inspector .meta-container .sd-webui-sm-inspector-save-button {
+    margin-left: 5px;
+}
+
 .sd-webui-sm-inspector .sd-webui-sm-inspector-fav-button {
     color: #999;
 }
@@ -1002,6 +1013,30 @@ body.sd-webui-sm-resizing {
 .sd-webui-sm-inspector .sd-webui-sm-inspector-load-button:hover {
     background: var(--secondary-500);
     /* background: var(--primary-500); */
+}
+
+.sd-webui-sm-inspector .sd-webui-sm-inspector-save-button[disabled] {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+.sd-webui-sm-inspector .sd-webui-sm-inspector-save-sticky {
+    position: sticky;
+    bottom: 0;
+    margin-top: 12px;
+    padding: 10px 0;
+    background: linear-gradient(to top, var(--body-background-fill), color-mix(in srgb, var(--body-background-fill), #0000 100%));
+    z-index: 2;
+    display: flex;
+    gap: 6px;
+}
+
+.sd-webui-sm-inspector .sd-webui-sm-inspector-save-sticky .sd-webui-sm-inspector-save-button,
+.sd-webui-sm-inspector .sd-webui-sm-inspector-save-sticky .sd-webui-sm-inspector-load-all-button {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    height: 2.5em;
 }
 
 .sd-webui-sm-inspector-mode {
