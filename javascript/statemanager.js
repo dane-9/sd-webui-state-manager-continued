@@ -577,21 +577,7 @@
         createNavTab('History', 'history', 'history', true);
         createNavTab('Configs', 'favourites', 'favourites');
         createNavTab('Settings', 'settings', null);
-        const autosaveContainer = sm.createElementWithClassList('div', 'sd-webui-sm-quicksetting');
-        const autosaveCheckbox = sm.createElementWithClassList('input', sm.svelteClasses.checkbox);
-        autosaveCheckbox.id = 'sd-webui-sm-autosave';
-        autosaveCheckbox.type = 'checkbox';
-        autosaveCheckbox.checked = sm.autoSaveHistory;
-        const autosaveLabel = sm.createElementWithInnerTextAndClassList('label', 'Auto-save history');
-        autosaveLabel.htmlFor = 'sd-webui-sm-autosave';
-        autosaveContainer.appendChild(autosaveCheckbox);
-        autosaveContainer.appendChild(autosaveLabel);
-        autosaveCheckbox.addEventListener('change', () => {
-            sm.autoSaveHistory = autosaveCheckbox.checked;
-            sm.ldb.set('sd-webui-state-manager-autosave', sm.autoSaveHistory);
-        });
         const navControlButtons = sm.createElementWithClassList('div', 'sd-webui-sm-control');
-        navControlButtons.appendChild(autosaveContainer);
         navControlButtons.appendChild(quickSettingSaveButton);
         const navButtonMode = sm.createElementWithClassList('button', 'sd-webui-sm-inspector-mode');
         navControlButtons.appendChild(navButtonMode);
@@ -744,6 +730,15 @@
             row.appendChild(controlElement);
             return row;
         };
+        const settingsAutosave = sm.createElementWithClassList('input', sm.svelteClasses.checkbox);
+        settingsAutosave.id = 'sd-webui-sm-autosave';
+        settingsAutosave.type = 'checkbox';
+        settingsAutosave.checked = sm.autoSaveHistory;
+        settingsAutosave.addEventListener('change', () => {
+            sm.autoSaveHistory = settingsAutosave.checked;
+            sm.ldb.set('sd-webui-state-manager-autosave', sm.autoSaveHistory);
+        });
+        settingsList.appendChild(createSettingsRow('Auto-save History', 'Automatically save each generation to History.', settingsAutosave));
         const settingsSmallViewEntries = document.createElement('input');
         settingsSmallViewEntries.id = 'sd-webui-sm-settings-small-view-entries';
         settingsSmallViewEntries.type = 'number';
