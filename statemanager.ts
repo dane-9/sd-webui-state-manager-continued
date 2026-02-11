@@ -63,6 +63,7 @@ interface SettingPathInfo {
 interface EntrySelection {
     rangeSelectStart: Entry | null,
     entries: Entry[],
+    selectedStateKeys: Set<string>,
     undoableRangeSelectionAmount: number,
     select: (entry: Entry, type: SelectionType) => void
 }
@@ -845,10 +846,12 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         for(let i = 0; i < numEntries; i++){
             const data = sm.memoryStorage.entries.data[filteredKeys[dataPageOffset + i]];
             const entry = entries.childNodes[i];
+            const entryStateKey = `${data.createdAt ?? ''}`;
 
             entry.data = data;
             entry.style.backgroundImage = `url("${data.preview}")`;
             entry.style.display = 'inherit';
+            entry.classList.toggle('active', sm.selection.selectedStateKeys.has(entryStateKey));
 
             const creationDate = new Date(data.createdAt);
 
@@ -860,8 +863,11 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         }
 
         for(let i = numEntries; i < entries.childNodes.length; i++){
+            entries.childNodes[i].classList.remove('active');
             entries.childNodes[i].style.display = 'none';
         }
+
+        sm.selection.entries = <Entry[]>Array.from(entries.childNodes).filter((entry: Entry) => entry.style.display != 'none' && entry.classList.contains('active'));
     }
 
     sm.updateEntryIndicators = function(entry){
@@ -2349,14 +2355,35 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     selection: {
         rangeSelectStart: null,
         entries: [],
+        selectedStateKeys: new Set<string>(),
         undoableRangeSelectionAmount: 0,
         select: function (entry: Entry, type: SelectionType): void {
+            const getStateKey = (targetEntry: Entry | null): string => `${targetEntry?.data?.createdAt ?? ''}`;
+            const addStateKey = (targetEntry: Entry | null): void => {
+                const key = getStateKey(targetEntry);
+
+                if(key.length > 0){
+                    this.selectedStateKeys.add(key);
+                }
+            };
+            const deleteStateKey = (targetEntry: Entry | null): void => {
+                const key = getStateKey(targetEntry);
+
+                if(key.length > 0){
+                    this.selectedStateKeys.delete(key);
+                }
+            };
+
+            this.selectedStateKeys = this.selectedStateKeys || new Set<string>();
+
             switch(type){
                 case 'single':
                     for(let e of this.entries){
                         e.classList.remove('active');
                     }
 
+                    this.selectedStateKeys.clear();
+                    addStateKey(entry);
                     this.rangeSelectStart = entry;
                     this.entries = [entry];
                     this.undoableRangeSelectionAmount = 0;
@@ -2368,10 +2395,19 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
                     entry.classList.toggle('active');
 
                     if(entry.classList.contains('active')){
-                        this.entries.push(entry);
+                        if(this.entries.indexOf(entry) == -1){
+                            this.entries.push(entry);
+                        }
+                        addStateKey(entry);
                     }
                     else{
-                        this.entries.splice(this.entries.indexOf(entry), 1);
+                        const entryIndex = this.entries.indexOf(entry);
+
+                        if(entryIndex > -1){
+                            this.entries.splice(entryIndex, 1);
+                        }
+
+                        deleteStateKey(entry);
                     }
                     break;
                 case 'range':
@@ -2385,6 +2421,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
                     for(let i = 0; i < unselectedEntries.length; i++){
                         unselectedEntries[i].classList.remove('active');
+                        deleteStateKey(<Entry>unselectedEntries[i]);
                     }
 
                     if(entry == this.rangeSelectStart){
@@ -2396,9 +2433,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
                     let rangeEndIndex = Array.prototype.indexOf.call(entry.parentNode!.children, entry);
 
                     function selectEntry(index){
-                        const rangeEntry = <HTMLElement>entry.parentNode!.childNodes[index];
+                        const rangeEntry = <Entry>entry.parentNode!.childNodes[index];
                         this.entries.push(rangeEntry);
                         rangeEntry.classList.add('active');
+                        addStateKey(rangeEntry);
                     }
 
                     if(rangeStartIndex < rangeEndIndex){

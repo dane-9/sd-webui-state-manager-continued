@@ -598,9 +598,11 @@
         for (let i = 0; i < numEntries; i++) {
             const data = sm.memoryStorage.entries.data[filteredKeys[dataPageOffset + i]];
             const entry = entries.childNodes[i];
+            const entryStateKey = `${data.createdAt ?? ''}`;
             entry.data = data;
             entry.style.backgroundImage = `url("${data.preview}")`;
             entry.style.display = 'inherit';
+            entry.classList.toggle('active', sm.selection.selectedStateKeys.has(entryStateKey));
             const creationDate = new Date(data.createdAt);
             entry.querySelector('.type').innerText = `${data.type == 'txt2img' ? '🖋' : '🖼️'} ${data.type}`;
             entry.querySelector('.date').innerText = `${creationDate.getDate().toString().padStart(2, '0')}-${(creationDate.getMonth() + 1).toString().padStart(2, '0')}-${creationDate.getFullYear().toString().padStart(2, '0')}`;
@@ -608,8 +610,10 @@
             sm.updateEntryIndicators(entry);
         }
         for (let i = numEntries; i < entries.childNodes.length; i++) {
+            entries.childNodes[i].classList.remove('active');
             entries.childNodes[i].style.display = 'none';
         }
+        sm.selection.entries = Array.from(entries.childNodes).filter((entry) => entry.style.display != 'none' && entry.classList.contains('active'));
     };
     sm.updateEntryIndicators = function (entry) {
         entry.classList.toggle('favourite', (entry.data.groups?.indexOf('favourites') ?? -1) > -1);
@@ -1777,13 +1781,30 @@
     selection: {
         rangeSelectStart: null,
         entries: [],
+        selectedStateKeys: new Set(),
         undoableRangeSelectionAmount: 0,
         select: function (entry, type) {
+            const getStateKey = (targetEntry) => `${targetEntry?.data?.createdAt ?? ''}`;
+            const addStateKey = (targetEntry) => {
+                const key = getStateKey(targetEntry);
+                if (key.length > 0) {
+                    this.selectedStateKeys.add(key);
+                }
+            };
+            const deleteStateKey = (targetEntry) => {
+                const key = getStateKey(targetEntry);
+                if (key.length > 0) {
+                    this.selectedStateKeys.delete(key);
+                }
+            };
+            this.selectedStateKeys = this.selectedStateKeys || new Set();
             switch (type) {
                 case 'single':
                     for (let e of this.entries) {
                         e.classList.remove('active');
                     }
+                    this.selectedStateKeys.clear();
+                    addStateKey(entry);
                     this.rangeSelectStart = entry;
                     this.entries = [entry];
                     this.undoableRangeSelectionAmount = 0;
@@ -1794,10 +1815,17 @@
                     this.undoableRangeSelectionAmount = 0;
                     entry.classList.toggle('active');
                     if (entry.classList.contains('active')) {
-                        this.entries.push(entry);
+                        if (this.entries.indexOf(entry) == -1) {
+                            this.entries.push(entry);
+                        }
+                        addStateKey(entry);
                     }
                     else {
-                        this.entries.splice(this.entries.indexOf(entry), 1);
+                        const entryIndex = this.entries.indexOf(entry);
+                        if (entryIndex > -1) {
+                            this.entries.splice(entryIndex, 1);
+                        }
+                        deleteStateKey(entry);
                     }
                     break;
                 case 'range':
@@ -1809,6 +1837,7 @@
                     const unselectedEntries = this.entries.splice(this.entries.length - this.undoableRangeSelectionAmount, this.undoableRangeSelectionAmount);
                     for (let i = 0; i < unselectedEntries.length; i++) {
                         unselectedEntries[i].classList.remove('active');
+                        deleteStateKey(unselectedEntries[i]);
                     }
                     if (entry == this.rangeSelectStart) {
                         return;
@@ -1820,6 +1849,7 @@
                         const rangeEntry = entry.parentNode.childNodes[index];
                         this.entries.push(rangeEntry);
                         rangeEntry.classList.add('active');
+                        addStateKey(rangeEntry);
                     }
                     if (rangeStartIndex < rangeEndIndex) {
                         for (let i = rangeStartIndex + 1; i <= rangeEndIndex; i++) {
