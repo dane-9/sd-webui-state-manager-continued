@@ -507,6 +507,10 @@ body.sd-webui-sm-modal-open {
     border: none !important;
 }
 
+.sd-webui-sm-entry-container.sd-webui-sm-entry-container-small-view .sd-webui-sm-entry-footer {
+    display: none;
+}
+
 .sd-webui-sm-entry-footer .button-navigation {
     /* float: left; */
     display: flex;
@@ -526,11 +530,19 @@ body.sd-webui-sm-modal-open {
     /* border-top: 1px solid var(--border-color-primary); */
 }
 
+.sd-webui-sm-entry-footer .button-navigation.disabled {
+    opacity: 0.5;
+}
+
 .sd-webui-sm-entry-footer button {
     /* margin: 0 8px; */
     width: 20px;
     height: 20px;
     line-height: 1.9em;
+}
+
+.sd-webui-sm-entry-footer .button-navigation.disabled button {
+    cursor: not-allowed;
 }
 
 .sd-webui-sm-entry-footer input {

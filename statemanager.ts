@@ -905,6 +905,19 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             event.preventDefault();
         });
 
+        const handleSmallViewModeChange = () => {
+            sm.syncPaginationInteractionState();
+
+            if(sm.isSmallViewMode() && sm.currentPage !== 0){
+                sm.currentPage = 0;
+                sm.pageNumberInput.value = 1;
+            }
+
+            sm.updateEntries();
+        };
+
+        window.addEventListener('resize', handleSmallViewModeChange);
+
         sm.updateEntries();
 
         app.addEventListener('input', sm.updateAllValueDiffDatas);
@@ -963,6 +976,17 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         }
 
         const isModal = sm.panelContainer.classList.contains('sd-webui-sm-modal-panel');
+        const isSmallViewMode = sm.isSmallViewMode();
+        const shouldResetPage = isSmallViewMode && sm.currentPage !== 0;
+
+        sm.syncPaginationInteractionState();
+
+        if(shouldResetPage){
+            sm.currentPage = 0;
+            sm.pageNumberInput.value = 1;
+            sm.queueEntriesUpdate(0);
+        }
+
         const contain = app.querySelector('.contain');
 
         if(isModal){
@@ -994,7 +1018,46 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         return sm.panelContainer.classList.contains('sd-webui-sm-modal-panel') ? 'modal' : 'docked';
     }
 
+    sm.isSmallViewMode = function(){
+        const entries = <HTMLElement | null>sm.panelContainer?.querySelector('.sd-webui-sm-entries');
+
+        if(!entries){
+            return false;
+        }
+
+        return window.getComputedStyle(entries).display != 'grid';
+    }
+
+    sm.syncEntryViewModeState = function(){
+        const entryContainer = <HTMLElement | null>sm.panelContainer?.querySelector('.sd-webui-sm-entry-container');
+
+        if(!entryContainer){
+            return;
+        }
+
+        entryContainer.classList.toggle('sd-webui-sm-entry-container-small-view', sm.isSmallViewMode());
+    }
+
+    sm.syncPaginationInteractionState = function(){
+        const disablePagination = sm.isSmallViewMode();
+        sm.syncEntryViewModeState();
+
+        sm.pageButtonNavigation.classList.toggle('disabled', disablePagination);
+
+        for(const button of sm.pageButtonNavigation.querySelectorAll('button')){
+            (<HTMLButtonElement>button).disabled = disablePagination;
+        }
+
+        sm.pageNumberInput.disabled = disablePagination;
+    }
+
     sm.goToPage = function(page){
+        if(sm.isSmallViewMode()){
+            sm.currentPage = 0;
+            sm.pageNumberInput.value = 1;
+            return;
+        }
+
         if(!sm.confirmDiscardPendingProfileChanges()){
             sm.pageNumberInput.value = sm.currentPage + 1;
             return;
@@ -1015,6 +1078,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         // Clear old listeners
         entryEventListenerAbortController.abort();
         entryEventListenerAbortController = new AbortController();
+        sm.syncPaginationInteractionState();
 
         const currentEntriesPerPage = sm.getEntriesPerPage();
         const entries = sm.panelContainer.querySelector('.sd-webui-sm-entries');        
