@@ -175,6 +175,19 @@
     flex-grow: 0;
 }
 
+.sd-webui-sm-modal-panel .sd-webui-sm-inspector-mode,
+.sd-webui-sm-modal-panel .sd-webui-sm-nav-save-button {
+    display: none;
+}
+
+.sd-webui-sm-modal-close-button {
+    display: none;
+}
+
+.sd-webui-sm-modal-panel .sd-webui-sm-modal-close-button {
+    display: inline-block;
+}
+
 .sd-webui-sm-panel-container.sd-webui-sm-modal-panel.open {
     position: fixed;
     top: 0;

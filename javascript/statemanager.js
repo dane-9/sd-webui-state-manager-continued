@@ -275,7 +275,7 @@
         navControlButtons.appendChild(navButtonMode);
         navButtonMode.addEventListener('click', () => {
             panel.classList.remove('sd-webui-sm-side-panel-folded');
-            sm.panelContainer.classList.toggle('sd-webui-sm-modal-panel');
+            sm.panelContainer.classList.add('sd-webui-sm-modal-panel');
             sm.mountPanelContainer();
             sm.syncModalOverlayState();
         });
@@ -287,13 +287,15 @@
                 sm.syncModalOverlayState();
             }
         });
-        const navButtonClose = sm.createElementWithInnerTextAndClassList('button', '✖');
+        const navButtonClose = sm.createElementWithInnerTextAndClassList('button', '✖', 'sd-webui-sm-modal-close-button');
         navControlButtons.appendChild(navButtonClose);
         navButtonClose.addEventListener('click', () => {
+            if (!sm.panelContainer.classList.contains('sd-webui-sm-modal-panel')) {
+                return;
+            }
             sm.panelContainer.classList.remove('sd-webui-sm-modal-panel');
             sm.mountPanelContainer();
             sm.syncModalOverlayState();
-            panel.classList.toggle('sd-webui-sm-side-panel-folded');
         });
         navTabs.appendChild(navControlButtons);
         nav.appendChild(navTabs);
@@ -462,6 +464,15 @@
             sm.lastUsedState = await sm.getCurrentState('img2img');
             return originaSubmitImg2img(...arguments);
         };
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape' || !sm.panelContainer.classList.contains('sd-webui-sm-modal-panel')) {
+                return;
+            }
+            sm.panelContainer.classList.remove('sd-webui-sm-modal-panel');
+            sm.mountPanelContainer();
+            sm.syncModalOverlayState();
+            event.preventDefault();
+        });
         sm.updateEntries();
         app.addEventListener('input', sm.updateAllValueDiffDatas);
         app.addEventListener('change', sm.updateAllValueDiffDatas);
