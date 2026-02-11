@@ -90,10 +90,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
     const app = gradioApp();
     const looselyEqualUIValues = new Set([null, undefined, "", "None"]);
-    const maxEntriesPerPage = {
-        docked: 80,
-        modal: 400
-    };
+    const initialEntrySlotCount = 12;
     const updateEntriesDebounceMs = 150;
     const updateStorageDebounceMs = 600;
     
@@ -123,10 +120,13 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         group: 'history',
         types: ['txt2img', 'img2img'],
         query: '',
+        sort: 'newest',
+        onlyFavourites: false,
         matches: function(data){
             const f = sm.entryFilter;
             // const q = f.query.toLowerCase();
             const queries = f.query.toLowerCase().split(/, */);
+            const isFavourite = (data.groups?.indexOf('favourites') ?? -1) > -1;
 
             const quickSettings = (data.quickSettings && typeof data.quickSettings === 'object') ? data.quickSettings : {};
             const checkpointName = `${quickSettings['Stable Diffusion checkpoint'] ?? quickSettings['sd_model_checkpoint'] ?? ''}`.toLowerCase();
@@ -135,6 +135,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             const negativePrompt = `${data.generationSettings?.negativePrompt ?? ''}`.toLowerCase();
 
             return (data.groups?.indexOf(f.group) ?? -1) > -1 && f.types.indexOf(data.type) > -1 &&
+                   (!f.onlyFavourites || isFavourite) &&
                    (f.query == '' || queries.every(q => checkpointName.indexOf(q) > -1 || sampler.indexOf(q) > -1 ||
                     prompt.indexOf(q) > -1 || negativePrompt.indexOf(q) > -1 ||
                     (data.hasOwnProperty('name') && `${data.name ?? ''}`.toLowerCase().indexOf(q) > -1)));
@@ -175,6 +176,27 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             updateStorageDebounceHandle = null;
             sm.updateStorage();
         }, delayMs);
+    }
+
+    sm.getEntriesPerPage = function(): number{
+        const entries = sm.panelContainer?.querySelector('.sd-webui-sm-entries');
+
+        if(!entries){
+            return 1;
+        }
+
+        const entriesStyle = window.getComputedStyle(entries);
+        const gap = Number.parseFloat(entriesStyle.columnGap || entriesStyle.gap || '0') || 0;
+        const paddingLeft = Number.parseFloat(entriesStyle.paddingLeft || '0') || 0;
+        const paddingRight = Number.parseFloat(entriesStyle.paddingRight || '0') || 0;
+        const availableWidth = Math.max(entries.clientWidth - paddingLeft - paddingRight, 0);
+        const entryWidth = Math.max(Number.parseFloat(entriesStyle.getPropertyValue('--sm-entry-size') || '100') || 100, 1);
+
+        if(availableWidth <= 0){
+            return 1;
+        }
+
+        return Math.max(Math.floor((availableWidth + gap) / (entryWidth + gap)), 1);
     }
 
     sm.injectUI = function() {
@@ -296,8 +318,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
         sm.panelContainer = sm.createElementWithClassList('div', 'sd-webui-sm-panel-container');
         const panel = sm.createElementWithClassList('div', 'sd-webui-sm-side-panel');
+        sm.sidePanel = panel;
 
         if(sm.hasOwnProperty('legacyData')){
+            panel.classList.add('sd-webui-sm-side-panel-legacy');
             const infoDiv = sm.createElementWithClassList('div', 'sd-webui-sm-info');
             infoDiv.appendChild(sm.createElementWithInnerTextAndClassList('h1', "⚠️ Warning ⚠️"));
 
@@ -406,15 +430,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         navControlButtons.appendChild(navButtonMode);
         
         navButtonMode.addEventListener('click', () => {
+            const firstVisibleEntryIndex = sm.currentPage * sm.getEntriesPerPage();
             sm.panelContainer.classList.toggle('sd-webui-sm-modal-panel');
-
-            if(sm.panelContainer.classList.contains('sd-webui-sm-modal-panel')){
-                sm.ensureEntrySlotCount(maxEntriesPerPage.modal);
-                sm.goToPage(Math.floor(sm.currentPage / (maxEntriesPerPage.modal / maxEntriesPerPage.docked)));
-            }
-            else{
-                sm.goToPage(Math.floor(sm.currentPage * (maxEntriesPerPage.modal / maxEntriesPerPage.docked)));
-            }
+            const entriesPerPage = sm.getEntriesPerPage();
+            sm.goToPage(Math.floor(firstVisibleEntryIndex / entriesPerPage));
         });
 
         panel.addEventListener('click', e => e.stopPropagation());
@@ -433,6 +452,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
         // Search + pagination
         const entryHeader = sm.createElementWithClassList('div', 'sd-webui-sm-entry-header');
+        const searchRow = sm.createElementWithClassList('div', 'sd-webui-sm-entry-toolbar-row', 'search-row');
+        const filterRow = sm.createElementWithClassList('div', 'sd-webui-sm-entry-toolbar-row', 'filter-row');
         const search = sm.createElementWithClassList('input');
         search.type = 'text';
         search.placeholder = "Filter by name, tokens, model or sampler";
@@ -445,8 +466,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         search.addEventListener('input', searchChangeCallback);
         search.addEventListener('change', () => searchChangeCallback(false));
         
-        entryHeader.appendChild(sm.createElementWithInnerTextAndClassList('span', '🔍', 'sd-webui-sm-icon'));
-        entryHeader.appendChild(search);
+        searchRow.appendChild(sm.createElementWithInnerTextAndClassList('span', '🔍', 'sd-webui-sm-icon'));
+        searchRow.appendChild(search);
         
         const entryFooter = sm.createElementWithClassList('div', 'sd-webui-sm-entry-footer');
         sm.pageButtonNavigation = sm.createElementWithClassList('div', 'button-navigation');
@@ -503,10 +524,39 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             }, false);
         }
 
-        entryHeader.appendChild(createFilterToggle('txt2img'));
-        entryHeader.appendChild(createFilterToggle('img2img'));
+        filterRow.appendChild(createFilterToggle('txt2img'));
+        filterRow.appendChild(createFilterToggle('img2img'));
+        filterRow.appendChild(sm.createPillToggle('★', {title: "Only show favourites", id: 'sd-webui-sm-filter-favourites'}, 'sd-webui-sm-filter-favourites-checkbox', false, (isOn: boolean) => {
+            sm.entryFilter.onlyFavourites = isOn;
+            sm.queueEntriesUpdate(updateEntriesDebounceMs);
+        }, true));
+        filterRow.appendChild(sm.createPillToggle('', {title: "Display creation time in entries", id: 'sd-webui-sm-inspector-view-entry-footer'}, 'sd-webui-sm-inspector-view-entry-footer-checkbox', false, (isOn: boolean) => entryContainer.dataset['showEntryFooter'] = isOn, true));
 
-        entryHeader.appendChild(sm.createPillToggle('', {title: "Display creation time in entries", id: 'sd-webui-sm-inspector-view-entry-footer'}, 'sd-webui-sm-inspector-view-entry-footer-checkbox', false, (isOn: boolean) => entryContainer.dataset['showEntryFooter'] = isOn, true));
+        const sortLabel = sm.createElementWithInnerTextAndClassList('label', 'Sort');
+        sortLabel.htmlFor = 'sd-webui-sm-sort';
+
+        const sortSelect = document.createElement('select');
+        sortSelect.id = 'sd-webui-sm-sort';
+        sortSelect.classList.add('sd-webui-sm-sort');
+        sortSelect.innerHTML = `
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="name">Name</option>
+            <option value="type">Type</option>
+        `;
+        sortSelect.value = sm.entryFilter.sort;
+        sortSelect.addEventListener('change', () => {
+            sm.entryFilter.sort = sortSelect.value;
+            sm.queueEntriesUpdate(updateEntriesDebounceMs);
+        });
+
+        const sortContainer = sm.createElementWithClassList('div', 'sd-webui-sm-sort-container');
+        sortContainer.appendChild(sortLabel);
+        sortContainer.appendChild(sortSelect);
+        filterRow.appendChild(sortContainer);
+
+        entryHeader.appendChild(searchRow);
+        entryHeader.appendChild(filterRow);
 
         // Entries
         const entries = sm.createElementWithClassList('div', 'sd-webui-sm-entries');
@@ -536,8 +586,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             }
         }
 
-        // Create only what docked mode needs first; modal capacity is created lazily.
-        sm.ensureEntrySlotCount(maxEntriesPerPage.docked);
+        sm.ensureEntrySlotCount(initialEntrySlotCount);
 
         const getEntryFromEvent = (event: Event): Entry | null => {
             if(!(event.target instanceof Element)){
@@ -605,6 +654,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
         sm.updateEntries();
 
+        window.addEventListener('resize', () => sm.queueEntriesUpdate(0));
+
         app.addEventListener('input', sm.updateAllValueDiffDatas);
         app.addEventListener('change', sm.updateAllValueDiffDatas);
     }
@@ -645,7 +696,12 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
     sm.toggle = function(){
         sm.mountPanelContainer();
-        app.querySelector('.sd-webui-sm-panel-container').classList.toggle('open');
+        const panelContainer = app.querySelector('.sd-webui-sm-panel-container');
+        panelContainer.classList.toggle('open');
+
+        if(panelContainer.classList.contains('open')){
+            sm.queueEntriesUpdate(0);
+        }
     }
 
     sm.mountPanelContainer = function(): void{
@@ -692,12 +748,31 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         entryEventListenerAbortController.abort();
         entryEventListenerAbortController = new AbortController();
 
-        const currentMaxEntriesPerPage = maxEntriesPerPage[sm.getMode()];
+        const currentEntriesPerPage = sm.getEntriesPerPage();
         const entries = sm.panelContainer.querySelector('.sd-webui-sm-entries');        
-        sm.ensureEntrySlotCount(currentMaxEntriesPerPage);
-        const filteredData = Object.fromEntries(Object.entries(sm.memoryStorage.entries.data).filter(kv => sm.entryFilter.matches(kv[1])));
-        const filteredKeys = Object.keys(filteredData).sort().reverse();
-        const numPages = Math.max(Math.ceil(filteredKeys.length / currentMaxEntriesPerPage), 1);
+        sm.ensureEntrySlotCount(currentEntriesPerPage);
+        const filteredEntries = Object.entries(sm.memoryStorage.entries.data).filter(kv => sm.entryFilter.matches(kv[1]));
+        const sortBy = sm.entryFilter.sort;
+
+        filteredEntries.sort((a, b) => {
+            const aState = a[1];
+            const bState = b[1];
+
+            switch(sortBy){
+                case 'oldest':
+                    return (Number(aState.createdAt ?? a[0]) || 0) - (Number(bState.createdAt ?? b[0]) || 0);
+                case 'name':
+                    return `${aState.name ?? ''}`.localeCompare(`${bState.name ?? ''}`) || (Number(bState.createdAt ?? b[0]) || 0) - (Number(aState.createdAt ?? a[0]) || 0);
+                case 'type':
+                    return `${aState.type ?? ''}`.localeCompare(`${bState.type ?? ''}`) || (Number(bState.createdAt ?? b[0]) || 0) - (Number(aState.createdAt ?? a[0]) || 0);
+                case 'newest':
+                default:
+                    return (Number(bState.createdAt ?? b[0]) || 0) - (Number(aState.createdAt ?? a[0]) || 0);
+            }
+        });
+
+        const filteredKeys = filteredEntries.map(([key]) => key);
+        const numPages = Math.max(Math.ceil(filteredKeys.length / currentEntriesPerPage), 1);
         
         sm.pageNumberInput.max = numPages;
         sm.maxPageNumberLabel.innerText = `of ${numPages}`
@@ -738,8 +813,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             sm.goToPage(numPages);
         }, {signal: entryEventListenerAbortController.signal});
 
-        const dataPageOffset = sm.currentPage * currentMaxEntriesPerPage;
-        const numEntries = Math.min(currentMaxEntriesPerPage, filteredKeys.length - dataPageOffset);
+        const dataPageOffset = sm.currentPage * currentEntriesPerPage;
+        const numEntries = Math.min(currentEntriesPerPage, filteredKeys.length - dataPageOffset);
 
         for(let i = 0; i < numEntries; i++){
             const data = sm.memoryStorage.entries.data[filteredKeys[dataPageOffset + i]];

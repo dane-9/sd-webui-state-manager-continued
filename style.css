@@ -2,6 +2,7 @@
 :root {
     --sm-side-panel-width: 0;
     --sm-side-panel-slide-speed: .15s;
+    --sm-entry-size: 100px;
 
     --sm-value-diff-same: green;
     --sm-value-diff-changed: red;
@@ -95,15 +96,23 @@
     flex-shrink: 0;
 
     display: grid;
-    grid-template-rows: 2em 60vh auto;
-    grid-template-columns: 1fr;
-    padding-top: 81px; /* TODO: set from JS to line up nicely */
-    margin-left: 3px;
+    grid-template-rows: 2.2em auto minmax(0, 1fr);
+    grid-template-columns: minmax(320px, 100%);
+    height: min(78vh, 900px);
+    min-height: 560px;
+    padding-top: 10px;
+    margin-left: 0;
     justify-content: right; /* Nicer slide-in animation */
     overflow: hidden;
     transition: width var(--sm-side-panel-slide-speed), visibility var(--sm-side-panel-slide-speed);
     visibility: hidden;
+}
 
+.sd-webui-sm-side-panel.sd-webui-sm-side-panel-legacy {
+    display: block;
+    min-height: unset;
+    height: auto;
+    padding-top: 0;
 }
 
 .sd-webui-sm-panel-container {
@@ -129,12 +138,11 @@
     position: absolute;
     top: 2.5vh;
     left: var(--position-offset);
-    /* width: 95vw; */
     height: 95vh;
-    grid-template-rows: 2em calc(100% - 2em);
-    grid-template-columns: 75% auto;
+    min-height: unset;
+    grid-template-rows: 2.2em auto minmax(0, 1fr);
+    grid-template-columns: minmax(320px, 100%);
     padding: var(--modal-padding);
-    /* margin: 15px; */
     background-color: #FFF;
     border: 1px solid var(--border-color-primary);
     border-radius: 4px;
@@ -146,16 +154,18 @@
 }
 
 .sd-webui-sm-panel-container.open .sd-webui-sm-side-panel {
-    --sm-side-panel-width: 400px;
+    width: auto;
+    min-width: min(320px, 100%);
+    flex-grow: 1;
     display: grid;
-    /* transition: visibility 0 var(--sm-side-panel-slide-speed); */
     visibility: visible;
-    /* width: var(--sm-side-panel-width); */
     background: var(--body-background-fill);
 }
 
 .sd-webui-sm-panel-container.sd-webui-sm-modal-panel.open .sd-webui-sm-side-panel {
-    --sm-side-panel-width: calc(100vw - calc(var(--position-offset) * 2));
+    width: calc(100vw - calc(var(--position-offset) * 2));
+    min-width: unset;
+    flex-grow: 0;
 }
 
 .sd-webui-sm-panel-container.sd-webui-sm-modal-panel.open {
@@ -182,6 +192,8 @@
 .sd-webui-sm-navigation {
     /* background-color: black; */
     height: 2em;
+    grid-column: 1 / -1;
+    grid-row: 1;
 }
 
 .sd-webui-sm-modal-panel .sd-webui-sm-navigation {
@@ -203,9 +215,11 @@
 
 .sd-webui-sm-pill-toggle {
     position: relative;
-    float: right;
+    float: none;
     /* bottom: -5px; */
     user-select: none;
+    display: inline-flex;
+    align-items: center;
 }
 
 .sd-webui-sm-pill-toggle input[type='checkbox'] {
@@ -253,34 +267,29 @@
     /* overflow: scroll; */
     border: 1px solid var(--border-color-primary);
     position: relative;
+    grid-column: 1;
+    grid-row: 2;
+    min-height: 0;
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: auto min-content auto;
     /* overflow: scroll; */
 }
 
 .sd-webui-sm-entries {
-    /* position: relative; */
-    /* display: flex;
-    flex-direction: row; */
-    height: calc(100% - 4.6em);
-    overflow: hidden scroll;
-    /* height: 100%; */
-    /* border: 1px solid var(--border-color-primary); */
-
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    grid-auto-rows: min-content;
-    grid-gap: 3px;
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 3px;
+    overflow: hidden;
     padding: 0 5px;
     margin-top: 2px;
-    /* margin-bottom: 0.5em; */
-}
-
-.sd-webui-sm-modal-panel .sd-webui-sm-entries {
-    grid-template-columns: repeat(10, 1fr);
 }
 
 .sd-webui-sm-entry {
-    /* width: 100px; */
-    height: 100px;
+    width: var(--sm-entry-size);
+    min-width: var(--sm-entry-size);
+    height: var(--sm-entry-size);
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
@@ -376,13 +385,44 @@
 }
 
 .sd-webui-sm-entry-header {
-    /* background-color: green; */
-    height: 2em;
-    /* position: absolute;
-    bottom: 0; */
+    position: sticky;
+    top: 0;
+    z-index: 3;
     width: 100%;
+    display: grid;
+    gap: 4px;
+    padding: 6px;
+    background: var(--body-background-fill);
+    border-bottom: 1px solid var(--border-color-primary);
+}
+
+.sd-webui-sm-entry-toolbar-row {
     display: flex;
-    padding: 3px;
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.sd-webui-sm-entry-toolbar-row.search-row {
+    flex-wrap: nowrap;
+}
+
+.sd-webui-sm-sort-container {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8em;
+    color: var(--neutral-400);
+}
+
+.sd-webui-sm-sort-container .sd-webui-sm-sort {
+    min-width: 110px;
+    background: var(--input-background-fill);
+    border: var(--input-border-width) solid var(--input-border-color);
+    border-radius: var(--input-radius);
+    color: var(--body-text-color);
+    padding: 2px 6px;
 }
 
 .sd-webui-sm-entry-footer {
@@ -481,14 +521,56 @@
 .sd-webui-sm-inspector {
     /* height: 33vh; */
     /* background-color: black; */
-    overflow: scroll;
+    overflow: auto;
+    min-height: 0;
+    grid-column: 1;
+    grid-row: 3;
+    border: 1px solid var(--border-color-primary);
+    padding-left: 0;
+    padding-top: 6px;
 }
 
 .sd-webui-sm-entry-header input, .sd-webui-sm-entry-footer input {
 }
 
 .sd-webui-sm-modal-panel .sd-webui-sm-inspector {
-    padding-left: var(--modal-padding);
+    padding-left: 0;
+}
+
+.sd-webui-sm-pane-splitter {
+    display: none;
+}
+
+.sd-webui-sm-pane-splitter:hover {
+    display: none;
+}
+
+body.sd-webui-sm-resizing {
+    cursor: auto !important;
+    user-select: auto !important;
+}
+
+@media (max-width: 1024px) {
+    .sd-webui-sm-side-panel,
+    .sd-webui-sm-modal-panel .sd-webui-sm-side-panel {
+        grid-template-columns: minmax(320px, 100%);
+        grid-template-rows: 2.2em auto minmax(220px, 1fr);
+        min-height: 660px;
+    }
+
+    .sd-webui-sm-entry-container {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    .sd-webui-sm-pane-splitter {
+        display: none;
+    }
+
+    .sd-webui-sm-inspector {
+        grid-column: 1;
+        grid-row: 3;
+    }
 }
 
 .sd-webui-sm-navigation .tabs {
