@@ -661,6 +661,10 @@ body.sd-webui-sm-modal-open {
     opacity: 0.75;
 }
 
+.sd-webui-sm-settings-warning-text {
+    color: #ff9a9a;
+}
+
 .sd-webui-sm-settings-row input[type='number'],
 .sd-webui-sm-settings-row select {
     width: 120px;

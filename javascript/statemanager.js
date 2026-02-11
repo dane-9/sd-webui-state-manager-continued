@@ -799,11 +799,22 @@
         settingsPanel.appendChild(settingsTitle);
         const settingsList = sm.createElementWithClassList('div', 'sd-webui-sm-settings-list');
         settingsPanel.appendChild(settingsList);
-        const createSettingsRow = (labelText, descriptionText, controlElement) => {
+        const createSettingsRow = (labelText, descriptionText, controlElement, warningText) => {
             const row = sm.createElementWithClassList('div', 'sd-webui-sm-settings-row');
             const labelContainer = sm.createElementWithClassList('div', 'sd-webui-sm-settings-label-container');
             const label = sm.createElementWithInnerTextAndClassList('label', labelText, 'sd-webui-sm-settings-label');
             const description = sm.createElementWithInnerTextAndClassList('div', descriptionText, 'sd-webui-sm-settings-description');
+            if (warningText && descriptionText.indexOf(warningText) > -1) {
+                const [beforeWarning, afterWarning] = descriptionText.split(warningText);
+                description.innerText = '';
+                if (beforeWarning.length > 0) {
+                    description.appendChild(document.createTextNode(beforeWarning));
+                }
+                description.appendChild(sm.createElementWithInnerTextAndClassList('span', warningText, 'sd-webui-sm-settings-warning-text'));
+                if (afterWarning.length > 0) {
+                    description.appendChild(document.createTextNode(afterWarning));
+                }
+            }
             labelContainer.appendChild(label);
             labelContainer.appendChild(description);
             row.appendChild(labelContainer);
@@ -905,7 +916,7 @@
             sm.uiSettings.preventApplyWithUnsavedConfigEdits = settingsPreventApplyWithUnsavedEdits.checked;
             sm.saveUISettings();
         });
-        settingsList.appendChild(createSettingsRow('Prevent Apply With Unsaved Config Edits', 'Block apply actions until config edits are saved or discarded.', settingsPreventApplyWithUnsavedEdits));
+        settingsList.appendChild(createSettingsRow('Prevent Apply With Unsaved Config Edits', 'Block apply actions until config edits are saved or discarded. Disabling this is not recommended.', settingsPreventApplyWithUnsavedEdits, 'Disabling this is not recommended.'));
         const settingsDefaultShowFavourites = document.createElement('input');
         settingsDefaultShowFavourites.id = 'sd-webui-sm-settings-default-show-favourites';
         settingsDefaultShowFavourites.type = 'checkbox';
