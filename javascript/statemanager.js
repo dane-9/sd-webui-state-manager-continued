@@ -34,19 +34,20 @@
         types: ['txt2img', 'img2img'],
         query: '',
         sort: 'newest',
-        onlyFavourites: false,
+        showFavouritesInHistory: false,
         matches: function (data) {
             const f = sm.entryFilter;
             // const q = f.query.toLowerCase();
             const queries = f.query.toLowerCase().split(/, */);
             const isFavourite = (data.groups?.indexOf('favourites') ?? -1) > -1;
+            const showEntryInHistory = f.group != 'history' || f.showFavouritesInHistory || !isFavourite;
             const quickSettings = (data.quickSettings && typeof data.quickSettings === 'object') ? data.quickSettings : {};
             const checkpointName = `${quickSettings['Stable Diffusion checkpoint'] ?? quickSettings['sd_model_checkpoint'] ?? ''}`.toLowerCase();
             const sampler = `${data.generationSettings?.sampler ?? ''}`.toLowerCase();
             const prompt = `${data.generationSettings?.prompt ?? ''}`.toLowerCase();
             const negativePrompt = `${data.generationSettings?.negativePrompt ?? ''}`.toLowerCase();
             return (data.groups?.indexOf(f.group) ?? -1) > -1 && f.types.indexOf(data.type) > -1 &&
-                (!f.onlyFavourites || isFavourite) &&
+                showEntryInHistory &&
                 (f.query == '' || queries.every(q => checkpointName.indexOf(q) > -1 || sampler.indexOf(q) > -1 ||
                     prompt.indexOf(q) > -1 || negativePrompt.indexOf(q) > -1 ||
                     (data.hasOwnProperty('name') && `${data.name ?? ''}`.toLowerCase().indexOf(q) > -1)));
@@ -411,6 +412,12 @@
         sm.inspector = sm.createElementWithClassList('div', 'sd-webui-sm-inspector');
         // Tabs
         const navTabs = sm.createElementWithClassList('div', 'tabs', 'gradio-tabs', sm.svelteClasses.tab);
+        let showSavedConfigsToggle = null;
+        const updateShowSavedConfigsToggleVisibility = () => {
+            if (showSavedConfigsToggle) {
+                showSavedConfigsToggle.style.display = sm.entryFilter.group == 'history' ? '' : 'none';
+            }
+        };
         function createNavTab(label, group, isSelected) {
             const button = sm.createElementWithInnerTextAndClassList('button', label, sm.svelteClasses.tab);
             if (isSelected) {
@@ -420,6 +427,7 @@
             button.addEventListener('click', () => {
                 button.parentNode.querySelectorAll('button').forEach(b => b.classList.toggle('selected', b == button));
                 sm.entryFilter.group = group;
+                updateShowSavedConfigsToggleVisibility();
                 sm.queueEntriesUpdate(updateEntriesDebounceMs);
             });
         }
@@ -535,10 +543,12 @@
         }
         filterRow.appendChild(createFilterToggle('txt2img'));
         filterRow.appendChild(createFilterToggle('img2img'));
-        filterRow.appendChild(sm.createPillToggle('Saved Configs Only', { title: "Only show saved configs", id: 'sd-webui-sm-filter-favourites' }, 'sd-webui-sm-filter-favourites-checkbox', false, (isOn) => {
-            sm.entryFilter.onlyFavourites = isOn;
+        showSavedConfigsToggle = sm.createPillToggle('Show Saved Configs', { title: "Show saved configs in history", id: 'sd-webui-sm-filter-favourites' }, 'sd-webui-sm-filter-favourites-checkbox', false, (isOn) => {
+            sm.entryFilter.showFavouritesInHistory = isOn;
             sm.queueEntriesUpdate(updateEntriesDebounceMs);
-        }, true));
+        }, true);
+        filterRow.appendChild(showSavedConfigsToggle);
+        updateShowSavedConfigsToggleVisibility();
         filterRow.appendChild(sm.createPillToggle('', { title: "Display creation time in entries", id: 'sd-webui-sm-inspector-view-entry-footer' }, 'sd-webui-sm-inspector-view-entry-footer-checkbox', false, (isOn) => entryContainer.dataset['showEntryFooter'] = isOn, true));
         const sortLabel = sm.createElementWithInnerTextAndClassList('label', 'Sort');
         sortLabel.htmlFor = 'sd-webui-sm-sort';
@@ -926,18 +936,7 @@
             if (!activeDraft.isFavourite) {
                 return;
             }
-            if (!confirm("Remove this saved config?")) {
-                return;
-            }
-            const stateKey = entry.data.createdAt;
-            const state = sm.memoryStorage.entries.data[stateKey];
-            if (state) {
-                delete state.name;
-            }
-            sm.removeStateFromGroup(stateKey, 'favourites');
-            sm.activeProfileDraft = null;
-            sm.updateEntries();
-            sm.updateInspector();
+            deleteButton.click();
         });
         deleteButton.addEventListener('click', () => {
             sm.deleteStates(true, entry.data.createdAt);
