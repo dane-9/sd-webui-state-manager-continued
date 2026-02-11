@@ -183,6 +183,22 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         return entriesPerPage;
     }
 
+    sm.captureInspectorAccordionState = function(): void{
+        if(!sm.inspector){
+            return;
+        }
+
+        sm.inspectorAccordionState = sm.inspectorAccordionState || {};
+
+        for(const accordion of sm.inspector.querySelectorAll('.sd-webui-sm-inspector-category')){
+            const sectionLabel = `${accordion.querySelector('.label')?.textContent ?? ''}`.trim();
+
+            if(sectionLabel.length > 0){
+                sm.inspectorAccordionState[sectionLabel] = accordion.classList.contains('open');
+            }
+        }
+    }
+
     sm.injectUI = function() {
         // I really want to reuse some of the generated `svelte-xxxxxx` components, but these names have been known to change in the past (https://github.com/AUTOMATIC1111/stable-diffusion-webui/discussions/10076)
         // To get around this, we find the target elements and extract the classname for this version of the app.
@@ -854,6 +870,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     }
 
     sm.updateInspector = async function(){
+        sm.captureInspectorAccordionState?.();
         sm.inspector.innerHTML = "";
 
         if(sm.selection.entries.length == 0){
@@ -1252,6 +1269,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
     sm.createInspectorSettingsAccordion = function(label: string, data: {[settingPath: string]: any} | HTMLElement): HTMLElement{
         const accordion = sm.createElementWithClassList('div', 'sd-webui-sm-inspector-category', 'block', 'gradio-accordion');
+        const sectionLabel = `${label}`.trim();
         
         accordion.appendChild(sm.createInspectorLabel(label));
         accordion.appendChild(sm.createElementWithInnerTextAndClassList('span', '▼', 'foldout'))
@@ -1283,17 +1301,21 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             e.preventDefault();
         });
         
-        content.style.height = '0';
+        const isOpen = Boolean(sm.inspectorAccordionState?.[sectionLabel]);
+        content.style.height = isOpen ? '100%' : '0';
+        accordion.classList.toggle('open', isOpen);
         accordion.appendChild(content);
 
         accordion.addEventListener('click', () => {
             if(content.style.height == '100%'){
                 content.style.height = '0';
                 accordion.classList.remove('open');
+                sm.inspectorAccordionState[sectionLabel] = false;
             }
             else{
                 content.style.height = '100%';
                 accordion.classList.add('open');
+                sm.inspectorAccordionState[sectionLabel] = true;
             }
 
             //
