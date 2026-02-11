@@ -804,6 +804,7 @@
         const settingsShowSmallViewPagination = document.createElement('input');
         settingsShowSmallViewPagination.id = 'sd-webui-sm-settings-show-small-view-pagination';
         settingsShowSmallViewPagination.type = 'checkbox';
+        settingsShowSmallViewPagination.classList.add(sm.svelteClasses.checkbox);
         settingsShowSmallViewPagination.addEventListener('change', () => {
             sm.uiSettings.showSmallViewPagination = settingsShowSmallViewPagination.checked;
             sm.saveUISettings();
@@ -838,6 +839,7 @@
         const settingsRememberFilters = document.createElement('input');
         settingsRememberFilters.id = 'sd-webui-sm-settings-remember-filters';
         settingsRememberFilters.type = 'checkbox';
+        settingsRememberFilters.classList.add(sm.svelteClasses.checkbox);
         settingsRememberFilters.addEventListener('change', () => {
             sm.uiSettings.rememberFilters = settingsRememberFilters.checked;
             sm.saveUISettings();
@@ -852,6 +854,7 @@
         const settingsDefaultShowFavourites = document.createElement('input');
         settingsDefaultShowFavourites.id = 'sd-webui-sm-settings-default-show-favourites';
         settingsDefaultShowFavourites.type = 'checkbox';
+        settingsDefaultShowFavourites.classList.add(sm.svelteClasses.checkbox);
         settingsDefaultShowFavourites.addEventListener('change', () => {
             sm.uiSettings.defaultShowFavouritesInHistory = settingsDefaultShowFavourites.checked;
             sm.saveUISettings();
@@ -865,6 +868,7 @@
         const settingsShowConfigsFirst = document.createElement('input');
         settingsShowConfigsFirst.id = 'sd-webui-sm-settings-show-configs-first';
         settingsShowConfigsFirst.type = 'checkbox';
+        settingsShowConfigsFirst.classList.add(sm.svelteClasses.checkbox);
         settingsShowConfigsFirst.addEventListener('change', () => {
             sm.uiSettings.showConfigsFirst = settingsShowConfigsFirst.checked;
             sm.saveUISettings();
