@@ -846,7 +846,6 @@
             }
             else {
                 sm.ldb.delete(entryFilterStorageKey);
-                sm.applyLoadedPreferences();
             }
         });
         settingsList.appendChild(createSettingsRow('Remember Last-Used Filters', 'Persist tab/filter/search selections between sessions.', settingsRememberFilters));
@@ -885,8 +884,6 @@
             sm.uiSettings.defaultOpenTab = sm.getNormalisedPanelTabValue(settingsDefaultOpenTab.value);
             settingsDefaultOpenTab.value = sm.uiSettings.defaultOpenTab;
             sm.saveUISettings();
-            sm.applyDefaultOpenTab();
-            sm.queueEntriesUpdate(0);
         });
         settingsList.appendChild(createSettingsRow('Default Open Tab', 'Tab to open when showing the panel.', settingsDefaultOpenTab));
         sm.syncPanelTabButtons = function () {
