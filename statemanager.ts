@@ -2169,7 +2169,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     };
 
     sm.init = async function(): Promise<void>{
-        await sm.api.get("version")
+        const versionPromise = sm.api.get("version")
         .then(response => {
             if(!sm.utils.isValidResponse(response, 'version')){
                 Promise.reject(response);
@@ -2179,7 +2179,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         })
         .catch(e => sm.utils.logResponseError("[State Manager] Getting State Manager version failed with error", e));
 
-        await sm.getFromStorage()
+        const storagePromise = sm.getFromStorage()
         .then(async storedData => {
             await sm.initMemoryStorage(storedData);
 
@@ -2189,9 +2189,14 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         })
         .catch(e => sm.utils.logResponseError("[State Manager] Could not get data from storage", e));
 
-        await sm.buildComponentMap();
+        // Build the component map in parallel; UI can render before this finishes.
+        const componentMapPromise = sm.buildComponentMap();
+
+        await Promise.all([versionPromise, storagePromise]);
 
         sm.injectUI();
+
+        await componentMapPromise;
     }
 
     onUiLoaded(sm.init);
