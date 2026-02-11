@@ -35,10 +35,15 @@
             const f = sm.entryFilter;
             // const q = f.query.toLowerCase();
             const queries = f.query.toLowerCase().split(/, */);
-            return data.groups.indexOf(f.group) > -1 && f.types.indexOf(data.type) > -1 &&
-                (f.query == '' || queries.every(q => data.quickSettings['Stable Diffusion checkpoint'].toLowerCase().indexOf(q) > -1 || data.generationSettings.sampler.toLowerCase().indexOf(q) > -1 ||
-                    data.generationSettings.prompt.toLowerCase().indexOf(q) > -1 || data.generationSettings.negativePrompt.toLowerCase().indexOf(q) > -1 ||
-                    (data.hasOwnProperty('name') && data.name.toLowerCase().indexOf(q) > -1)));
+            const quickSettings = (data.quickSettings && typeof data.quickSettings === 'object') ? data.quickSettings : {};
+            const checkpointName = `${quickSettings['Stable Diffusion checkpoint'] ?? quickSettings['sd_model_checkpoint'] ?? ''}`.toLowerCase();
+            const sampler = `${data.generationSettings?.sampler ?? ''}`.toLowerCase();
+            const prompt = `${data.generationSettings?.prompt ?? ''}`.toLowerCase();
+            const negativePrompt = `${data.generationSettings?.negativePrompt ?? ''}`.toLowerCase();
+            return (data.groups?.indexOf(f.group) ?? -1) > -1 && f.types.indexOf(data.type) > -1 &&
+                (f.query == '' || queries.every(q => checkpointName.indexOf(q) > -1 || sampler.indexOf(q) > -1 ||
+                    prompt.indexOf(q) > -1 || negativePrompt.indexOf(q) > -1 ||
+                    (data.hasOwnProperty('name') && `${data.name ?? ''}`.toLowerCase().indexOf(q) > -1)));
         }
     };
     sm.currentPage = 0;
@@ -446,7 +451,7 @@
         }
     };
     sm.updateEntryIndicators = function (entry) {
-        entry.classList.toggle('favourite', entry.data.groups.indexOf('favourites') > -1);
+        entry.classList.toggle('favourite', (entry.data.groups?.indexOf('favourites') ?? -1) > -1);
         entry.classList.toggle('named', entry.data.hasOwnProperty('name') && entry.data.name != undefined && entry.data.name.length > 0);
     };
     sm.updateInspector = async function () {
@@ -527,12 +532,14 @@
             'CLIP_stop_at_last_layers': 'CLIP skip',
             'sd_hypernetwork': 'Hypernetwork',
         };
-        const mandatoryQuickSettings = Object.keys(quickSettingLabelRenames).filter(k => entry.data.quickSettings.hasOwnProperty(k));
-        const miscQuickSettings = Object.keys(entry.data.quickSettings).filter(k => mandatoryQuickSettings.indexOf(k) == -1);
+        const entryQuickSettings = (entry.data.quickSettings && typeof entry.data.quickSettings === 'object') ? entry.data.quickSettings : {};
+        const entryComponentSettings = (entry.data.componentSettings && typeof entry.data.componentSettings === 'object') ? entry.data.componentSettings : {};
+        const mandatoryQuickSettings = Object.keys(quickSettingLabelRenames).filter(k => entryQuickSettings.hasOwnProperty(k));
+        const miscQuickSettings = Object.keys(entryQuickSettings).filter(k => mandatoryQuickSettings.indexOf(k) == -1);
         function createQuickSetting(label, settingPath) {
-            const quickSettingParameter = sm.createInspectorParameter(label, entry.data.quickSettings[settingPath], () => sm.applyQuickParameters(entry.data.quickSettings, settingPath));
+            const quickSettingParameter = sm.createInspectorParameter(label, entryQuickSettings[settingPath], () => sm.applyQuickParameters(entryQuickSettings, settingPath));
             if (sm.componentMap.hasOwnProperty(settingPath)) {
-                quickSettingParameter.dataset['valueDiff'] = (sm.componentMap[settingPath].entries[0].component.instance.$$.ctx[0] == entry.data.quickSettings[settingPath] ? 'same' : 'changed');
+                quickSettingParameter.dataset['valueDiff'] = (sm.componentMap[settingPath].entries[0].component.instance.$$.ctx[0] == entryQuickSettings[settingPath] ? 'same' : 'changed');
             }
             else {
                 quickSettingParameter.dataset['valueDiff'] = 'missing';
@@ -554,13 +561,13 @@
             createQuickSetting(settingName, settingName);
         }
         sm.inspector.appendChild(sm.createInspectorSettingsAccordion('Quick settings', quickSettingsContainer));
-        const savedComponentSettings = sm.utils.unflattenSettingsMap(entry.data.componentSettings);
+        const savedComponentSettings = sm.utils.unflattenSettingsMap(entryComponentSettings);
         const savedComponentDefaults = sm.utils.unflattenSettingsMap(sm.memoryStorage.savedDefaults[entry.data.defaults]);
         let curatedSettingNames = new Set(); // Added manually to Generation accordion e.g.
         // A curated section that displays the core generation params, whether they differ or not
         const generationSettingsContent = sm.createElementWithClassList('div', 'sd-webui-sm-inspector-category-content');
         function getSavedValue(settingPath) {
-            return entry.data.componentSettings.hasOwnProperty(settingPath) ? entry.data.componentSettings[settingPath] : sm.memoryStorage.savedDefaults[entry.data.defaults][settingPath];
+            return entryComponentSettings.hasOwnProperty(settingPath) ? entryComponentSettings[settingPath] : sm.memoryStorage.savedDefaults[entry.data.defaults][settingPath];
         }
         function createCompositeInspectorParameter(label, displayValueFormatter, settingPaths) {
             settingPaths.forEach(curatedSettingNames.add.bind(curatedSettingNames));
@@ -713,6 +720,9 @@
         }
     };
     sm.applyQuickParameters = async function (values, ...filter) {
+        if (!values || typeof values !== 'object') {
+            values = {};
+        }
         if (filter.length > 0) {
             values = sm.utils.getFilteredObject(values, ...filter);
         }
@@ -1243,9 +1253,10 @@
             .catch(e => sm.utils.logResponseError("[State Manager] Getting save file name failed with error", e));
     };
     sm.applyAll = function (state) {
-        sm.applyQuickParameters(state.quickSettings); // The 4 mandatory ones always get saved, any other relevant ones will be in here. Easy!
+        const quickSettings = (state.quickSettings && typeof state.quickSettings === 'object') ? state.quickSettings : {};
+        sm.applyQuickParameters(quickSettings); // The 4 mandatory ones always get saved, any other relevant ones will be in here. Easy!
         const savedComponentDefaults = sm.memoryStorage.savedDefaults[state.defaults];
-        let mergedComponentSettings = state.componentSettings;
+        let mergedComponentSettings = (state.componentSettings && typeof state.componentSettings === 'object') ? state.componentSettings : {};
         // Add saved default value if it differs from the current UI
         for (const settingPath in savedComponentDefaults) {
             if (settingPath.indexOf(state.type) == -1) {
