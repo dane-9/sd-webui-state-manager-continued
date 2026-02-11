@@ -94,8 +94,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         docked: 80,
         modal: 400
     };
+    const updateEntriesDebounceMs = 150;
     
     let entryEventListenerAbortController = new AbortController();
+    let updateEntriesDebounceHandle: number | null = null;
 
     sm.autoSaveHistory = false;
     sm.lastHeadImage = null;
@@ -138,6 +140,23 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     };
 
     sm.currentPage = 0;
+
+    sm.queueEntriesUpdate = function(delayMs = 0): void{
+        if(updateEntriesDebounceHandle != null){
+            clearTimeout(updateEntriesDebounceHandle);
+            updateEntriesDebounceHandle = null;
+        }
+
+        if(delayMs <= 0){
+            sm.updateEntries();
+            return;
+        }
+
+        updateEntriesDebounceHandle = window.setTimeout(() => {
+            updateEntriesDebounceHandle = null;
+            sm.updateEntries();
+        }, delayMs);
+    }
 
     sm.injectUI = function() {
         // I really want to reuse some of the generated `svelte-xxxxxx` components, but these names have been known to change in the past (https://github.com/AUTOMATIC1111/stable-diffusion-webui/discussions/10076)
@@ -334,7 +353,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
                 button.parentNode.querySelectorAll('button').forEach(b => b.classList.toggle('selected', b == button));
 
                 sm.entryFilter.group = group;
-                sm.updateEntries();
+                sm.queueEntriesUpdate(updateEntriesDebounceMs);
             });
         }
 
@@ -398,13 +417,13 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         search.type = 'text';
         search.placeholder = "Filter by name, tokens, model or sampler";
         
-        const searchChangeCallback = () => {
+        const searchChangeCallback = (debounce = true) => {
             sm.entryFilter.query = search.value;
-            sm.updateEntries();
+            sm.queueEntriesUpdate(debounce ? updateEntriesDebounceMs : 0);
         };
         
         search.addEventListener('input', searchChangeCallback);
-        search.addEventListener('change', searchChangeCallback);
+        search.addEventListener('change', () => searchChangeCallback(false));
         
         entryHeader.appendChild(sm.createElementWithInnerTextAndClassList('span', '🔍', 'sd-webui-sm-icon'));
         entryHeader.appendChild(search);
@@ -460,7 +479,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
                     sm.entryFilter.types.splice(typeIndex, 1);
                 }
 
-                sm.updateEntries();
+                sm.queueEntriesUpdate(updateEntriesDebounceMs);
             }, false);
         }
 
