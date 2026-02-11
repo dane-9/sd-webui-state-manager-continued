@@ -207,15 +207,6 @@
         if (!draft.dirty) {
             return;
         }
-        const nameChanged = `${draft.name ?? ''}` !== `${draft.originalName ?? ''}`;
-        let saveMode = 'overwrite';
-        if (nameChanged) {
-            saveMode = 'new';
-        }
-        else {
-            const overwrite = confirm("Overwrite this config with your changes?\nPress Cancel to save as a new config instead.");
-            saveMode = overwrite ? 'overwrite' : 'new';
-        }
         const assignDraftData = (targetState, baseGroups) => {
             const finalName = `${draft.name ?? ''}`.trim();
             if (finalName.length > 0) {
@@ -229,28 +220,12 @@
                 checkboxes: { ...(draft.inspectorState.checkboxes || {}) }
             };
         };
-        if (saveMode == 'overwrite') {
-            assignDraftData(entry.data, entry.data.groups || []);
-            sm.activeProfileDraft = null;
-            sm.updateStorage();
-            sm.updateEntryIndicators(entry);
-            sm.updateEntries();
-            sm.updateInspector();
-            return;
-        }
-        const newState = JSON.parse(JSON.stringify(entry.data));
-        assignDraftData(newState, entry.data.groups || []);
-        const savedState = sm.upsertState(newState);
+        assignDraftData(entry.data, entry.data.groups || []);
         sm.activeProfileDraft = null;
+        sm.updateStorage();
+        sm.updateEntryIndicators(entry);
         sm.updateEntries();
-        const entries = sm.panelContainer.querySelector('.sd-webui-sm-entries');
-        const targetEntry = Array.from(entries.childNodes).find((candidate) => `${candidate?.data?.createdAt ?? ''}` == `${savedState.createdAt}`);
-        if (targetEntry) {
-            sm.selection.select(targetEntry, 'single');
-        }
-        else {
-            sm.updateInspector();
-        }
+        sm.updateInspector();
     };
     sm.getEntriesPerPage = function () {
         return entriesPerPage;
@@ -873,10 +848,22 @@
         saveChangesButton.title = activeDraft.originalIsFavourite ? "Save edited config settings" : "Save Changes is only available for saved configs";
         loadAllButton.title = "Apply selected settings to the current UI";
         const syncConfigActionButtons = () => {
-            const hasConfigName = `${activeDraft.name ?? ''}`.trim().length > 0;
-            favButton.classList.toggle('on', activeDraft.isFavourite);
-            favButton.disabled = activeDraft.isFavourite || !hasConfigName;
-            favButton.title = activeDraft.isFavourite ? "Already saved as config" : (hasConfigName ? "Save as config" : "Enter a config name first");
+            const trimmedName = `${activeDraft.name ?? ''}`.trim();
+            const hasConfigName = trimmedName.length > 0;
+            const originalTrimmedName = `${activeDraft.originalName ?? ''}`.trim();
+            const nameChanged = trimmedName !== originalTrimmedName;
+            const canSaveAsConfig = hasConfigName && (!activeDraft.originalIsFavourite || nameChanged);
+            favButton.classList.toggle('on', canSaveAsConfig);
+            favButton.disabled = !canSaveAsConfig;
+            if (!hasConfigName) {
+                favButton.title = "Enter a config name first";
+            }
+            else if (activeDraft.originalIsFavourite && !nameChanged) {
+                favButton.title = "Change the config name to save a new copy";
+            }
+            else {
+                favButton.title = "Save as config";
+            }
             unsaveButton.disabled = !activeDraft.isFavourite;
         };
         syncConfigActionButtons();
@@ -902,34 +889,34 @@
         };
         nameField.addEventListener('input', nameInputCallback);
         favButton.addEventListener('click', () => {
-            if (activeDraft.isFavourite) {
+            const finalName = `${activeDraft.name ?? ''}`.trim();
+            const originalTrimmedName = `${activeDraft.originalName ?? ''}`.trim();
+            const nameChanged = finalName !== originalTrimmedName;
+            const canSaveAsConfig = finalName.length > 0 && (!activeDraft.originalIsFavourite || nameChanged);
+            if (!canSaveAsConfig) {
                 return;
             }
-            if (!activeDraft.originalIsFavourite) {
-                const newState = JSON.parse(JSON.stringify(entry.data));
-                const finalName = `${activeDraft.name ?? ''}`.trim();
-                if (finalName.length > 0) {
-                    newState.name = finalName;
-                }
-                else {
-                    delete newState.name;
-                }
-                newState.groups = sm.getGroupsWithFavouriteState(entry.data.groups || [], true);
-                newState.inspectorState = {
-                    checkboxes: { ...(activeDraft.inspectorState.checkboxes || {}) }
-                };
-                const savedState = sm.upsertState(newState);
-                sm.activeProfileDraft = null;
-                sm.updateEntries();
-                const entries = sm.panelContainer.querySelector('.sd-webui-sm-entries');
-                const targetEntry = Array.from(entries.childNodes).find((candidate) => `${candidate?.data?.createdAt ?? ''}` == `${savedState.createdAt}`);
-                if (targetEntry) {
-                    sm.selection.select(targetEntry, 'single');
-                }
-                else {
-                    sm.updateInspector();
-                }
-                return;
+            const newState = JSON.parse(JSON.stringify(entry.data));
+            if (finalName.length > 0) {
+                newState.name = finalName;
+            }
+            else {
+                delete newState.name;
+            }
+            newState.groups = sm.getGroupsWithFavouriteState(entry.data.groups || [], true);
+            newState.inspectorState = {
+                checkboxes: { ...(activeDraft.inspectorState.checkboxes || {}) }
+            };
+            const savedState = sm.upsertState(newState);
+            sm.activeProfileDraft = null;
+            sm.updateEntries();
+            const entries = sm.panelContainer.querySelector('.sd-webui-sm-entries');
+            const targetEntry = Array.from(entries.childNodes).find((candidate) => `${candidate?.data?.createdAt ?? ''}` == `${savedState.createdAt}`);
+            if (targetEntry) {
+                sm.selection.select(targetEntry, 'single');
+            }
+            else {
+                sm.updateInspector();
             }
         });
         unsaveButton.addEventListener('click', () => {
