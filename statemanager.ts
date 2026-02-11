@@ -131,7 +131,9 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         rememberFilters: false,
         defaultShowFavouritesInHistory: false,
         showConfigsFirst: true,
-        defaultOpenTab: 'favourites'
+        defaultOpenTab: 'favourites',
+        hideSearchByDefault: false,
+        preventApplyWithUnsavedConfigEdits: true
     };
     sm.loadedEntryFilter = null;
 
@@ -175,7 +177,9 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             rememberFilters: false,
             defaultShowFavouritesInHistory: false,
             showConfigsFirst: true,
-            defaultOpenTab: 'favourites'
+            defaultOpenTab: 'favourites',
+            hideSearchByDefault: false,
+            preventApplyWithUnsavedConfigEdits: true
         };
 
         if(!settings || typeof settings !== 'object'){
@@ -189,6 +193,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         normalised.defaultShowFavouritesInHistory = Boolean(settings.defaultShowFavouritesInHistory);
         normalised.showConfigsFirst = Boolean(settings.showConfigsFirst);
         normalised.defaultOpenTab = sm.getNormalisedPanelTabValue(settings.defaultOpenTab);
+        normalised.hideSearchByDefault = Boolean(settings.hideSearchByDefault);
+        normalised.preventApplyWithUnsavedConfigEdits = Boolean(settings.preventApplyWithUnsavedConfigEdits);
 
         return normalised;
     }
@@ -255,6 +261,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         const defaultShowFavouritesCheckbox = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-default-show-favourites');
         const showConfigsFirstCheckbox = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-show-configs-first');
         const defaultOpenTabSelect = <HTMLSelectElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-default-open-tab');
+        const hideSearchByDefaultCheckbox = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-hide-search');
+        const preventApplyWithUnsavedEditsCheckbox = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-prevent-apply-unsaved-edits');
 
         if(smallViewEntriesInput){
             smallViewEntriesInput.value = `${Math.max(1, Number(sm.uiSettings.smallViewEntriesPerPage) || entriesPerPage)}`;
@@ -283,6 +291,14 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         if(defaultOpenTabSelect){
             defaultOpenTabSelect.value = sm.getNormalisedPanelTabValue(sm.uiSettings.defaultOpenTab);
         }
+
+        if(hideSearchByDefaultCheckbox){
+            hideSearchByDefaultCheckbox.checked = Boolean(sm.uiSettings.hideSearchByDefault);
+        }
+
+        if(preventApplyWithUnsavedEditsCheckbox){
+            preventApplyWithUnsavedEditsCheckbox.checked = Boolean(sm.uiSettings.preventApplyWithUnsavedConfigEdits);
+        }
     }
 
     sm.saveUISettings = function(){
@@ -302,6 +318,31 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             sort: sm.getNormalisedSortValue(sm.entryFilter.sort),
             showFavouritesInHistory: Boolean(sm.entryFilter.showFavouritesInHistory)
         });
+    }
+
+    sm.syncSearchRowVisibility = function(){
+        const searchRow = <HTMLElement | null>sm.panelContainer?.querySelector('.sd-webui-sm-entry-toolbar-row.search-row');
+
+        if(!searchRow){
+            return;
+        }
+
+        searchRow.style.display = sm.uiSettings.hideSearchByDefault ? 'none' : '';
+    }
+
+    sm.canProceedWithApplyAction = function(): boolean{
+        if(!sm.uiSettings.preventApplyWithUnsavedConfigEdits){
+            return true;
+        }
+
+        const draft: ActiveProfileDraft | null = sm.activeProfileDraft || null;
+
+        if(!draft || !draft.dirty){
+            return true;
+        }
+
+        alert("You have unsaved config changes. Save or discard them before applying settings.");
+        return false;
     }
 
     sm.applyDefaultOpenTab = function(){
@@ -333,6 +374,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         sm.syncNavTabOrder?.();
         sm.syncPanelTabButtons?.();
         sm.syncPanelTabVisibility?.();
+        sm.syncSearchRowVisibility?.();
         sm.syncPaginationInteractionState?.();
 
         if(sm.panelContainer){
@@ -1135,6 +1177,17 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         });
         settingsList.appendChild(createSettingsRow('Default Sort', 'Sort mode used when filters are not remembered.', settingsDefaultSort));
 
+        const settingsHideSearchByDefault = document.createElement('input');
+        settingsHideSearchByDefault.id = 'sd-webui-sm-settings-hide-search';
+        settingsHideSearchByDefault.type = 'checkbox';
+        settingsHideSearchByDefault.classList.add(sm.svelteClasses.checkbox);
+        settingsHideSearchByDefault.addEventListener('change', () => {
+            sm.uiSettings.hideSearchByDefault = settingsHideSearchByDefault.checked;
+            sm.saveUISettings();
+            sm.syncSearchRowVisibility();
+        });
+        settingsList.appendChild(createSettingsRow('Hide Search Bar By Default', 'Hide the filter/search row in History and Configs views.', settingsHideSearchByDefault));
+
         const settingsRememberFilters = document.createElement('input');
         settingsRememberFilters.id = 'sd-webui-sm-settings-remember-filters';
         settingsRememberFilters.type = 'checkbox';
@@ -1151,6 +1204,16 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             }
         });
         settingsList.appendChild(createSettingsRow('Remember Last-Used Filters', 'Persist tab/filter/search selections between sessions.', settingsRememberFilters));
+
+        const settingsPreventApplyWithUnsavedEdits = document.createElement('input');
+        settingsPreventApplyWithUnsavedEdits.id = 'sd-webui-sm-settings-prevent-apply-unsaved-edits';
+        settingsPreventApplyWithUnsavedEdits.type = 'checkbox';
+        settingsPreventApplyWithUnsavedEdits.classList.add(sm.svelteClasses.checkbox);
+        settingsPreventApplyWithUnsavedEdits.addEventListener('change', () => {
+            sm.uiSettings.preventApplyWithUnsavedConfigEdits = settingsPreventApplyWithUnsavedEdits.checked;
+            sm.saveUISettings();
+        });
+        settingsList.appendChild(createSettingsRow('Prevent Apply With Unsaved Config Edits', 'Block apply actions until config edits are saved or discarded.', settingsPreventApplyWithUnsavedEdits));
 
         const settingsDefaultShowFavourites = document.createElement('input');
         settingsDefaultShowFavourites.id = 'sd-webui-sm-settings-default-show-favourites';
@@ -1277,6 +1340,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         entries.addEventListener('dblclick', (event: MouseEvent) => {
             const entry = getEntryFromEvent(event);
             if(!entry){
+                return;
+            }
+
+            if(!sm.canProceedWithApplyAction()){
                 return;
             }
 
@@ -1772,6 +1839,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         saveChangesButton.addEventListener('click', () => sm.saveActiveProfileChanges());
 
         loadAllButton.addEventListener('click', () => {
+            if(!sm.canProceedWithApplyAction()){
+                return;
+            }
+
             for(const param of sm.inspector.querySelectorAll('.sd-webui-sm-inspector-param:has(:checked)')){
                 param.apply?.();
             }
@@ -2121,6 +2192,12 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         content.appendChild(applyButton);
 
         applyButton.addEventListener('click', e => {
+            if(!sm.canProceedWithApplyAction()){
+                e.stopPropagation();
+                e.preventDefault();
+                return;
+            }
+
             for(const param of applyButton.parentNode.querySelectorAll('.sd-webui-sm-inspector-param:has(:checked)')){
                 param.apply();
             }
@@ -2219,7 +2296,13 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     }
 
     sm.createUseButton = function(onUse: () => void){
-        return sm.createInspectorSideButton('↙️', "Apply to prompt (overrides current)", onUse); //alt 📋, ↙️, 🔖, or 🗳
+        return sm.createInspectorSideButton('↙️', "Apply to prompt (overrides current)", () => {
+            if(!sm.canProceedWithApplyAction()){
+                return;
+            }
+
+            onUse();
+        }); //alt 📋, ↙️, 🔖, or 🗳
     }
 
     sm.createCopyButton = function(value: any){
@@ -2760,6 +2843,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     }
 
     sm.applyAll = function(state: State){
+        if(!sm.canProceedWithApplyAction()){
+            return;
+        }
+
         const quickSettings = (state.quickSettings && typeof state.quickSettings === 'object') ? state.quickSettings : {};
         sm.applyQuickParameters(quickSettings); // The 4 mandatory ones always get saved, any other relevant ones will be in here. Easy!
 
