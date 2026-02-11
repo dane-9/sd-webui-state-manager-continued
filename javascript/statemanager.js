@@ -13,12 +13,24 @@
     const initialEntrySlotCount = entriesPerPage;
     const updateEntriesDebounceMs = 150;
     const updateStorageDebounceMs = 600;
+    const uiSettingsStorageKey = 'sd-webui-state-manager-ui-settings';
+    const entryFilterStorageKey = 'sd-webui-state-manager-entry-filter';
+    const validSorts = new Set(['newest', 'oldest', 'name', 'type']);
     let entryEventListenerAbortController = new AbortController();
     let updateEntriesDebounceHandle = null;
     let updateStorageDebounceHandle = null;
     sm.autoSaveHistory = false;
     sm.lastHeadImage = null;
     sm.lastUsedState = null;
+    sm.activePanelTab = 'history';
+    sm.uiSettings = {
+        smallViewEntriesPerPage: entriesPerPage,
+        showSmallViewPagination: false,
+        defaultSort: 'newest',
+        rememberFilters: false,
+        defaultShowFavouritesInHistory: false
+    };
+    sm.loadedEntryFilter = null;
     sm.ldb.get('sd-webui-state-manager-autosave', autosave => {
         if (autosave == null) {
             return;
@@ -29,12 +41,152 @@
             autosaveCheckbox.checked = autosave;
         }
     });
+    sm.getNormalisedSortValue = function (value) {
+        return validSorts.has(`${value}`) ? `${value}` : 'newest';
+    };
+    sm.getDefaultEntryFilter = function () {
+        return {
+            group: 'history',
+            types: ['txt2img', 'img2img'],
+            query: '',
+            sort: sm.getNormalisedSortValue(sm.uiSettings.defaultSort),
+            showFavouritesInHistory: Boolean(sm.uiSettings.defaultShowFavouritesInHistory)
+        };
+    };
+    sm.getNormalisedUISettings = function (settings) {
+        const normalised = {
+            smallViewEntriesPerPage: entriesPerPage,
+            showSmallViewPagination: false,
+            defaultSort: 'newest',
+            rememberFilters: false,
+            defaultShowFavouritesInHistory: false
+        };
+        if (!settings || typeof settings !== 'object') {
+            return normalised;
+        }
+        normalised.smallViewEntriesPerPage = Math.max(1, Number.parseInt(`${settings.smallViewEntriesPerPage ?? ''}`) || entriesPerPage);
+        normalised.showSmallViewPagination = Boolean(settings.showSmallViewPagination);
+        normalised.defaultSort = sm.getNormalisedSortValue(settings.defaultSort);
+        normalised.rememberFilters = Boolean(settings.rememberFilters);
+        normalised.defaultShowFavouritesInHistory = Boolean(settings.defaultShowFavouritesInHistory);
+        return normalised;
+    };
+    sm.getNormalisedStoredEntryFilter = function (filter) {
+        if (!filter || typeof filter !== 'object') {
+            return null;
+        }
+        const validGroups = new Set(['history', 'favourites']);
+        const group = validGroups.has(`${filter.group}`) ? `${filter.group}` : 'history';
+        const types = Array.isArray(filter.types) ? filter.types.filter(t => t == 'txt2img' || t == 'img2img') : ['txt2img', 'img2img'];
+        return {
+            group,
+            types: types.length > 0 ? types : ['txt2img', 'img2img'],
+            query: `${filter.query ?? ''}`,
+            sort: sm.getNormalisedSortValue(filter.sort),
+            showFavouritesInHistory: Boolean(filter.showFavouritesInHistory)
+        };
+    };
+    sm.syncEntryFilterControls = function () {
+        if (!sm.panelContainer) {
+            return;
+        }
+        const searchInput = sm.panelContainer.querySelector('.sd-webui-sm-entry-header .search-row input');
+        const txt2imgCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-filter-txt2img');
+        const img2imgCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-filter-img2img');
+        const showSavedCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-filter-favourites-checkbox');
+        const sortSelect = sm.panelContainer.querySelector('#sd-webui-sm-sort');
+        if (searchInput) {
+            searchInput.value = sm.entryFilter.query;
+        }
+        if (txt2imgCheckbox) {
+            txt2imgCheckbox.checked = sm.entryFilter.types.indexOf('txt2img') > -1;
+        }
+        if (img2imgCheckbox) {
+            img2imgCheckbox.checked = sm.entryFilter.types.indexOf('img2img') > -1;
+        }
+        if (showSavedCheckbox) {
+            showSavedCheckbox.checked = sm.entryFilter.showFavouritesInHistory;
+        }
+        if (sortSelect) {
+            sortSelect.value = sm.getNormalisedSortValue(sm.entryFilter.sort);
+        }
+    };
+    sm.syncUISettingsControls = function () {
+        if (!sm.panelContainer) {
+            return;
+        }
+        const smallViewEntriesInput = sm.panelContainer.querySelector('#sd-webui-sm-settings-small-view-entries');
+        const showSmallViewPaginationCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-show-small-view-pagination');
+        const defaultSortSelect = sm.panelContainer.querySelector('#sd-webui-sm-settings-default-sort');
+        const rememberFiltersCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-remember-filters');
+        const defaultShowFavouritesCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-default-show-favourites');
+        if (smallViewEntriesInput) {
+            smallViewEntriesInput.value = `${Math.max(1, Number(sm.uiSettings.smallViewEntriesPerPage) || entriesPerPage)}`;
+        }
+        if (showSmallViewPaginationCheckbox) {
+            showSmallViewPaginationCheckbox.checked = Boolean(sm.uiSettings.showSmallViewPagination);
+        }
+        if (defaultSortSelect) {
+            defaultSortSelect.value = sm.getNormalisedSortValue(sm.uiSettings.defaultSort);
+        }
+        if (rememberFiltersCheckbox) {
+            rememberFiltersCheckbox.checked = Boolean(sm.uiSettings.rememberFilters);
+        }
+        if (defaultShowFavouritesCheckbox) {
+            defaultShowFavouritesCheckbox.checked = Boolean(sm.uiSettings.defaultShowFavouritesInHistory);
+        }
+    };
+    sm.saveUISettings = function () {
+        sm.ldb.set(uiSettingsStorageKey, sm.getNormalisedUISettings(sm.uiSettings));
+    };
+    sm.persistEntryFilterIfEnabled = function () {
+        if (!sm.uiSettings.rememberFilters) {
+            sm.ldb.delete(entryFilterStorageKey);
+            return;
+        }
+        sm.ldb.set(entryFilterStorageKey, {
+            group: sm.entryFilter.group == 'favourites' ? 'favourites' : 'history',
+            types: [...sm.entryFilter.types],
+            query: sm.entryFilter.query,
+            sort: sm.getNormalisedSortValue(sm.entryFilter.sort),
+            showFavouritesInHistory: Boolean(sm.entryFilter.showFavouritesInHistory)
+        });
+    };
+    sm.applyLoadedPreferences = function () {
+        const defaults = sm.getDefaultEntryFilter();
+        const rememberedFilter = sm.uiSettings.rememberFilters ? sm.getNormalisedStoredEntryFilter(sm.loadedEntryFilter) : null;
+        sm.entryFilter.group = rememberedFilter?.group ?? defaults.group;
+        sm.entryFilter.types = [...(rememberedFilter?.types ?? defaults.types)];
+        sm.entryFilter.query = rememberedFilter?.query ?? defaults.query;
+        sm.entryFilter.sort = rememberedFilter?.sort ?? defaults.sort;
+        sm.entryFilter.showFavouritesInHistory = rememberedFilter?.showFavouritesInHistory ?? defaults.showFavouritesInHistory;
+        sm.activePanelTab = sm.entryFilter.group;
+        sm.syncUISettingsControls();
+        sm.syncEntryFilterControls();
+        sm.syncPanelTabButtons?.();
+        sm.syncPanelTabVisibility?.();
+        sm.syncPaginationInteractionState?.();
+        if (sm.panelContainer) {
+            sm.queueEntriesUpdate(0);
+        }
+    };
+    sm.loadPreferences = function () {
+        sm.ldb.get(uiSettingsStorageKey, uiSettings => {
+            sm.uiSettings = sm.getNormalisedUISettings(uiSettings);
+            if (!sm.uiSettings.rememberFilters) {
+                sm.loadedEntryFilter = null;
+                sm.ldb.delete(entryFilterStorageKey);
+                sm.applyLoadedPreferences();
+                return;
+            }
+            sm.ldb.get(entryFilterStorageKey, entryFilter => {
+                sm.loadedEntryFilter = sm.getNormalisedStoredEntryFilter(entryFilter);
+                sm.applyLoadedPreferences();
+            });
+        });
+    };
     sm.entryFilter = {
-        group: 'history',
-        types: ['txt2img', 'img2img'],
-        query: '',
-        sort: 'newest',
-        showFavouritesInHistory: false,
+        ...sm.getDefaultEntryFilter(),
         matches: function (data) {
             const f = sm.entryFilter;
             // const q = f.query.toLowerCase();
@@ -53,6 +205,7 @@
                     (data.hasOwnProperty('name') && `${data.name ?? ''}`.toLowerCase().indexOf(q) > -1)));
         }
     };
+    sm.loadPreferences();
     sm.currentPage = 0;
     sm.queueEntriesUpdate = function (delayMs = 0) {
         if (updateEntriesDebounceHandle != null) {
@@ -228,6 +381,9 @@
         sm.updateInspector();
     };
     sm.getEntriesPerPage = function () {
+        if (sm.isSmallViewMode()) {
+            return Math.max(1, Number.parseInt(`${sm.uiSettings.smallViewEntriesPerPage ?? ''}`) || entriesPerPage);
+        }
         return entriesPerPage;
     };
     sm.syncModalOverlayState = function () {
@@ -388,26 +544,39 @@
         // Tabs
         const navTabs = sm.createElementWithClassList('div', 'tabs', 'gradio-tabs', sm.svelteClasses.tab);
         let showSavedConfigsToggle = null;
+        let settingsPanel = null;
+        const panelTabButtons = {};
         const updateShowSavedConfigsToggleVisibility = () => {
             if (showSavedConfigsToggle) {
-                showSavedConfigsToggle.style.display = sm.entryFilter.group == 'history' ? '' : 'none';
+                showSavedConfigsToggle.style.display = sm.activePanelTab == 'history' ? '' : 'none';
             }
         };
-        function createNavTab(label, group, isSelected) {
+        const setActivePanelTab = (tab, group) => {
+            sm.activePanelTab = tab;
+            sm.syncPanelTabButtons?.();
+            sm.syncPanelTabVisibility?.();
+            updateShowSavedConfigsToggleVisibility();
+            if (group) {
+                sm.entryFilter.group = group;
+                sm.persistEntryFilterIfEnabled();
+                sm.queueEntriesUpdate(updateEntriesDebounceMs);
+            }
+        };
+        function createNavTab(label, tab, group, isSelected) {
             const button = sm.createElementWithInnerTextAndClassList('button', label, sm.svelteClasses.tab);
+            button.dataset['smTab'] = tab;
+            panelTabButtons[tab] = button;
             if (isSelected) {
                 button.classList.add('selected');
             }
             navTabs.appendChild(button);
             button.addEventListener('click', () => {
-                button.parentNode.querySelectorAll('button').forEach(b => b.classList.toggle('selected', b == button));
-                sm.entryFilter.group = group;
-                updateShowSavedConfigsToggleVisibility();
-                sm.queueEntriesUpdate(updateEntriesDebounceMs);
+                setActivePanelTab(tab, group ?? undefined);
             });
         }
-        createNavTab('History', 'history', true);
-        createNavTab('Configs', 'favourites');
+        createNavTab('History', 'history', 'history', true);
+        createNavTab('Configs', 'favourites', 'favourites');
+        createNavTab('Settings', 'settings', null);
         const autosaveContainer = sm.createElementWithClassList('div', 'sd-webui-sm-quicksetting');
         const autosaveCheckbox = sm.createElementWithClassList('input', sm.svelteClasses.checkbox);
         autosaveCheckbox.id = 'sd-webui-sm-autosave';
@@ -464,8 +633,12 @@
         const search = sm.createElementWithClassList('input');
         search.type = 'text';
         search.placeholder = "Filter by name, tokens, model or sampler";
+        search.value = sm.entryFilter.query;
         const searchChangeCallback = (debounce = true) => {
             sm.entryFilter.query = search.value;
+            if (!debounce) {
+                sm.persistEntryFilterIfEnabled();
+            }
             sm.queueEntriesUpdate(debounce ? updateEntriesDebounceMs : 0);
         };
         search.addEventListener('input', searchChangeCallback);
@@ -505,7 +678,7 @@
         entryFooter.appendChild(sm.pageButtonNavigation);
         entryFooter.appendChild(textNavigation);
         function createFilterToggle(type) {
-            return sm.createPillToggle(type, { title: `Show ${type} entries` }, `sd-webui-sm-filter-${type}`, true, (isOn) => {
+            return sm.createPillToggle(type, { title: `Show ${type} entries` }, `sd-webui-sm-filter-${type}`, sm.entryFilter.types.indexOf(type) > -1, (isOn) => {
                 const typeIndex = sm.entryFilter.types.indexOf(type);
                 if (isOn && typeIndex == -1) {
                     sm.entryFilter.types.push(type);
@@ -513,13 +686,15 @@
                 else if (!isOn && typeIndex > -1) {
                     sm.entryFilter.types.splice(typeIndex, 1);
                 }
+                sm.persistEntryFilterIfEnabled();
                 sm.queueEntriesUpdate(updateEntriesDebounceMs);
             }, false);
         }
         filterRow.appendChild(createFilterToggle('txt2img'));
         filterRow.appendChild(createFilterToggle('img2img'));
-        showSavedConfigsToggle = sm.createPillToggle('Show Saved Configs', { title: "Show saved configs in history", id: 'sd-webui-sm-filter-favourites' }, 'sd-webui-sm-filter-favourites-checkbox', false, (isOn) => {
+        showSavedConfigsToggle = sm.createPillToggle('Show Saved Configs', { title: "Show saved configs in history", id: 'sd-webui-sm-filter-favourites' }, 'sd-webui-sm-filter-favourites-checkbox', sm.entryFilter.showFavouritesInHistory, (isOn) => {
             sm.entryFilter.showFavouritesInHistory = isOn;
+            sm.persistEntryFilterIfEnabled();
             sm.queueEntriesUpdate(updateEntriesDebounceMs);
         }, true);
         filterRow.appendChild(showSavedConfigsToggle);
@@ -539,6 +714,7 @@
         sortSelect.value = sm.entryFilter.sort;
         sortSelect.addEventListener('change', () => {
             sm.entryFilter.sort = sortSelect.value;
+            sm.persistEntryFilterIfEnabled();
             sm.queueEntriesUpdate(updateEntriesDebounceMs);
         });
         const sortContainer = sm.createElementWithClassList('div', 'sd-webui-sm-sort-container');
@@ -552,6 +728,115 @@
         entryContainer.appendChild(entryHeader);
         entryContainer.appendChild(entries);
         entryContainer.appendChild(entryFooter);
+        settingsPanel = sm.createElementWithClassList('div', 'sd-webui-sm-settings-panel');
+        const settingsTitle = sm.createElementWithInnerTextAndClassList('h2', 'Settings', 'sd-webui-sm-settings-title');
+        settingsPanel.appendChild(settingsTitle);
+        const settingsList = sm.createElementWithClassList('div', 'sd-webui-sm-settings-list');
+        settingsPanel.appendChild(settingsList);
+        const createSettingsRow = (labelText, descriptionText, controlElement) => {
+            const row = sm.createElementWithClassList('div', 'sd-webui-sm-settings-row');
+            const labelContainer = sm.createElementWithClassList('div', 'sd-webui-sm-settings-label-container');
+            const label = sm.createElementWithInnerTextAndClassList('label', labelText, 'sd-webui-sm-settings-label');
+            const description = sm.createElementWithInnerTextAndClassList('div', descriptionText, 'sd-webui-sm-settings-description');
+            labelContainer.appendChild(label);
+            labelContainer.appendChild(description);
+            row.appendChild(labelContainer);
+            row.appendChild(controlElement);
+            return row;
+        };
+        const settingsSmallViewEntries = document.createElement('input');
+        settingsSmallViewEntries.id = 'sd-webui-sm-settings-small-view-entries';
+        settingsSmallViewEntries.type = 'number';
+        settingsSmallViewEntries.min = '1';
+        settingsSmallViewEntries.max = '500';
+        settingsSmallViewEntries.step = '1';
+        settingsSmallViewEntries.addEventListener('change', () => {
+            const value = Math.max(1, Number.parseInt(settingsSmallViewEntries.value) || entriesPerPage);
+            settingsSmallViewEntries.value = `${value}`;
+            sm.uiSettings.smallViewEntriesPerPage = value;
+            sm.saveUISettings();
+            if (sm.isSmallViewMode() && !sm.uiSettings.showSmallViewPagination) {
+                sm.currentPage = 0;
+                sm.pageNumberInput.value = 1;
+            }
+            sm.queueEntriesUpdate(0);
+        });
+        settingsList.appendChild(createSettingsRow('Small View Entries', 'Number of entries shown in small view.', settingsSmallViewEntries));
+        const settingsShowSmallViewPagination = document.createElement('input');
+        settingsShowSmallViewPagination.id = 'sd-webui-sm-settings-show-small-view-pagination';
+        settingsShowSmallViewPagination.type = 'checkbox';
+        settingsShowSmallViewPagination.addEventListener('change', () => {
+            sm.uiSettings.showSmallViewPagination = settingsShowSmallViewPagination.checked;
+            sm.saveUISettings();
+            if (sm.isSmallViewMode() && !sm.uiSettings.showSmallViewPagination) {
+                sm.currentPage = 0;
+                sm.pageNumberInput.value = 1;
+            }
+            sm.syncPaginationInteractionState();
+            sm.queueEntriesUpdate(0);
+        });
+        settingsList.appendChild(createSettingsRow('Show Small View Pagination', 'Display page controls in small view.', settingsShowSmallViewPagination));
+        const settingsDefaultSort = document.createElement('select');
+        settingsDefaultSort.id = 'sd-webui-sm-settings-default-sort';
+        settingsDefaultSort.classList.add('sd-webui-sm-sort');
+        settingsDefaultSort.innerHTML = `
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+            <option value="name">Name</option>
+            <option value="type">Type</option>
+        `;
+        settingsDefaultSort.addEventListener('change', () => {
+            sm.uiSettings.defaultSort = sm.getNormalisedSortValue(settingsDefaultSort.value);
+            settingsDefaultSort.value = sm.uiSettings.defaultSort;
+            sm.saveUISettings();
+            if (!sm.uiSettings.rememberFilters) {
+                sm.entryFilter.sort = sm.uiSettings.defaultSort;
+                sm.syncEntryFilterControls();
+                sm.queueEntriesUpdate(updateEntriesDebounceMs);
+            }
+        });
+        settingsList.appendChild(createSettingsRow('Default Sort', 'Sort mode used when filters are not remembered.', settingsDefaultSort));
+        const settingsRememberFilters = document.createElement('input');
+        settingsRememberFilters.id = 'sd-webui-sm-settings-remember-filters';
+        settingsRememberFilters.type = 'checkbox';
+        settingsRememberFilters.addEventListener('change', () => {
+            sm.uiSettings.rememberFilters = settingsRememberFilters.checked;
+            sm.saveUISettings();
+            if (sm.uiSettings.rememberFilters) {
+                sm.persistEntryFilterIfEnabled();
+            }
+            else {
+                sm.ldb.delete(entryFilterStorageKey);
+                sm.applyLoadedPreferences();
+            }
+        });
+        settingsList.appendChild(createSettingsRow('Remember Last-Used Filters', 'Persist tab/filter/search selections between sessions.', settingsRememberFilters));
+        const settingsDefaultShowFavourites = document.createElement('input');
+        settingsDefaultShowFavourites.id = 'sd-webui-sm-settings-default-show-favourites';
+        settingsDefaultShowFavourites.type = 'checkbox';
+        settingsDefaultShowFavourites.addEventListener('change', () => {
+            sm.uiSettings.defaultShowFavouritesInHistory = settingsDefaultShowFavourites.checked;
+            sm.saveUISettings();
+            if (!sm.uiSettings.rememberFilters) {
+                sm.entryFilter.showFavouritesInHistory = sm.uiSettings.defaultShowFavouritesInHistory;
+                sm.syncEntryFilterControls();
+                sm.queueEntriesUpdate(updateEntriesDebounceMs);
+            }
+        });
+        settingsList.appendChild(createSettingsRow('Show Saved Configs In History By Default', 'Controls whether configs are shown in History by default.', settingsDefaultShowFavourites));
+        sm.syncPanelTabButtons = function () {
+            for (const tabName in panelTabButtons) {
+                panelTabButtons[tabName].classList.toggle('selected', sm.activePanelTab == tabName);
+            }
+        };
+        sm.syncPanelTabVisibility = function () {
+            const showSettings = sm.activePanelTab == 'settings';
+            entryContainer.style.display = showSettings ? 'none' : '';
+            sm.inspector.style.display = showSettings ? 'none' : '';
+            settingsPanel.style.display = showSettings ? 'block' : 'none';
+            updateShowSavedConfigsToggleVisibility();
+        };
+        sm.syncPanelTabButtons();
         const createEntrySlot = () => {
             const entry = sm.createElementWithClassList('button', 'sd-webui-sm-entry');
             entry.style.display = 'none';
@@ -610,6 +895,7 @@
         panel.appendChild(nav);
         panel.appendChild(entryContainer);
         panel.appendChild(sm.inspector);
+        panel.appendChild(settingsPanel);
         sm.panelContainer.appendChild(panel);
         sm.mountPanelContainer();
         sm.panelContainer.classList.add('open');
@@ -640,14 +926,14 @@
         });
         const handleSmallViewModeChange = () => {
             sm.syncPaginationInteractionState();
-            if (sm.isSmallViewMode() && sm.currentPage !== 0) {
+            if (sm.isSmallViewMode() && !sm.uiSettings.showSmallViewPagination && sm.currentPage !== 0) {
                 sm.currentPage = 0;
                 sm.pageNumberInput.value = 1;
             }
             sm.updateEntries();
         };
         window.addEventListener('resize', handleSmallViewModeChange);
-        sm.updateEntries();
+        sm.applyLoadedPreferences();
         app.addEventListener('input', sm.updateAllValueDiffDatas);
         app.addEventListener('change', sm.updateAllValueDiffDatas);
     };
@@ -691,9 +977,9 @@
         }
         const isModal = sm.panelContainer.classList.contains('sd-webui-sm-modal-panel');
         const isSmallViewMode = sm.isSmallViewMode();
-        const shouldResetPage = isSmallViewMode && sm.currentPage !== 0;
+        const shouldResetPage = isSmallViewMode && !sm.uiSettings.showSmallViewPagination && sm.currentPage !== 0;
         sm.syncPaginationInteractionState();
-        if (shouldResetPage) {
+        if (shouldResetPage && sm.pageNumberInput) {
             sm.currentPage = 0;
             sm.pageNumberInput.value = 1;
             sm.queueEntriesUpdate(0);
@@ -733,10 +1019,13 @@
         if (!entryContainer) {
             return;
         }
-        entryContainer.classList.toggle('sd-webui-sm-entry-container-small-view', sm.isSmallViewMode());
+        entryContainer.classList.toggle('sd-webui-sm-entry-container-small-view', sm.isSmallViewMode() && !sm.uiSettings.showSmallViewPagination);
     };
     sm.syncPaginationInteractionState = function () {
-        const disablePagination = sm.isSmallViewMode();
+        if (!sm.pageButtonNavigation || !sm.pageNumberInput) {
+            return;
+        }
+        const disablePagination = sm.isSmallViewMode() && !sm.uiSettings.showSmallViewPagination;
         sm.syncEntryViewModeState();
         sm.pageButtonNavigation.classList.toggle('disabled', disablePagination);
         for (const button of sm.pageButtonNavigation.querySelectorAll('button')) {
@@ -745,7 +1034,7 @@
         sm.pageNumberInput.disabled = disablePagination;
     };
     sm.goToPage = function (page) {
-        if (sm.isSmallViewMode()) {
+        if (sm.isSmallViewMode() && !sm.uiSettings.showSmallViewPagination) {
             sm.currentPage = 0;
             sm.pageNumberInput.value = 1;
             return;

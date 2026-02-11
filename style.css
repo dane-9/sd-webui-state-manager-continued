@@ -613,6 +613,72 @@ body.sd-webui-sm-modal-open {
     padding-top: 6px;
 }
 
+.sd-webui-sm-settings-panel {
+    display: none;
+    grid-column: 1;
+    grid-row: 2 / 4;
+    border: 1px solid var(--border-color-primary);
+    padding: 10px;
+    overflow: auto;
+}
+
+.sd-webui-sm-modal-panel .sd-webui-sm-settings-panel {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    border: none;
+    padding: 0;
+}
+
+.sd-webui-sm-settings-title {
+    margin: 0 0 10px 0;
+    font-size: 1.1em;
+}
+
+.sd-webui-sm-settings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.sd-webui-sm-settings-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 8px;
+    border: 1px solid var(--border-color-primary);
+    border-radius: var(--input-radius);
+    align-items: center;
+}
+
+.sd-webui-sm-settings-label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 2px;
+}
+
+.sd-webui-sm-settings-description {
+    font-size: 0.85em;
+    opacity: 0.75;
+}
+
+.sd-webui-sm-settings-row input[type='number'],
+.sd-webui-sm-settings-row select {
+    width: 120px;
+    outline: none !important;
+    border: var(--input-border-width) solid var(--input-border-color) !important;
+    border-radius: var(--input-radius) !important;
+    background: var(--input-background-fill) !important;
+    color: var(--body-text-color) !important;
+    padding: var(--size-2) var(--size-2) !important;
+    border-color: var(--block-border-color) !important;
+    box-shadow: var(--input-shadow) !important;
+}
+
+.sd-webui-sm-settings-row select option {
+    background: var(--input-background-fill);
+    color: var(--body-text-color);
+}
+
 .sd-webui-sm-entry-header input, .sd-webui-sm-entry-footer input {
 }
 
