@@ -95,9 +95,11 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         modal: 400
     };
     const updateEntriesDebounceMs = 150;
+    const updateStorageDebounceMs = 600;
     
     let entryEventListenerAbortController = new AbortController();
     let updateEntriesDebounceHandle: number | null = null;
+    let updateStorageDebounceHandle: number | null = null;
 
     sm.autoSaveHistory = false;
     sm.lastHeadImage = null;
@@ -155,6 +157,23 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         updateEntriesDebounceHandle = window.setTimeout(() => {
             updateEntriesDebounceHandle = null;
             sm.updateEntries();
+        }, delayMs);
+    }
+
+    sm.queueStorageUpdate = function(delayMs = updateStorageDebounceMs): void{
+        if(updateStorageDebounceHandle != null){
+            clearTimeout(updateStorageDebounceHandle);
+            updateStorageDebounceHandle = null;
+        }
+
+        if(delayMs <= 0){
+            sm.updateStorage();
+            return;
+        }
+
+        updateStorageDebounceHandle = window.setTimeout(() => {
+            updateStorageDebounceHandle = null;
+            sm.updateStorage();
         }, delayMs);
     }
 
@@ -776,13 +795,18 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         viewSettingsContainer.appendChild(sm.createPillToggle('missing/obsolete', {title: "Show properties that are missing from the current UI", id: 'sd-webui-sm-inspector-view-missing'}, 'sd-webui-sm-inspector-view-missing-checkbox', true, (isOn: boolean) => sm.inspector.dataset['showMissing'] = isOn, true));
         viewSettingsContainer.appendChild(sm.createPillToggle('Try applying missing/obsolete', {title: "Try applying the values of missing properties", id: 'sd-webui-sm-inspector-apply-missing'}, 'sd-webui-sm-inspector-apply-missing-checkbox', false, (isOn: boolean) => sm.inspector.dataset['applyMissing'] = isOn, true));
 
-        const nameChangeCallback = () => {
+        const nameInputCallback = () => {
             sm.setStateName(entry.data.createdAt, nameField.value);
             sm.updateEntryIndicators(entry);
         };
 
-        nameField.addEventListener('input', nameChangeCallback);
-        nameField.addEventListener('change', nameChangeCallback);
+        const nameCommitCallback = () => {
+            nameInputCallback();
+            sm.queueStorageUpdate(0);
+        };
+
+        nameField.addEventListener('input', nameInputCallback);
+        nameField.addEventListener('change', nameCommitCallback);
 
         favButton.addEventListener('click', () => {
             if(!entry.data.groups || entry.data.groups.indexOf('favourites') == -1){
@@ -1329,7 +1353,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     sm.setStateName = function(stateKey: number, name: string): void{
         sm.memoryStorage.entries.data[stateKey].name = name;
 
-        sm.updateStorage();
+        sm.queueStorageUpdate();
     }
 
     sm.buildComponentMap = async function(): Promise<void>{
@@ -1500,6 +1524,11 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     }
 
     sm.updateStorage = async function(): Promise<void>{
+        if(updateStorageDebounceHandle != null){
+            clearTimeout(updateStorageDebounceHandle);
+            updateStorageDebounceHandle = null;
+        }
+
         sm.api.get("savelocation")
         .then(response => {
             if(!sm.utils.isValidResponse(response, 'location')){

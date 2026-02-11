@@ -14,8 +14,10 @@
         modal: 400
     };
     const updateEntriesDebounceMs = 150;
+    const updateStorageDebounceMs = 600;
     let entryEventListenerAbortController = new AbortController();
     let updateEntriesDebounceHandle = null;
+    let updateStorageDebounceHandle = null;
     sm.autoSaveHistory = false;
     sm.lastHeadImage = null;
     sm.lastUsedState = null;
@@ -61,6 +63,20 @@
         updateEntriesDebounceHandle = window.setTimeout(() => {
             updateEntriesDebounceHandle = null;
             sm.updateEntries();
+        }, delayMs);
+    };
+    sm.queueStorageUpdate = function (delayMs = updateStorageDebounceMs) {
+        if (updateStorageDebounceHandle != null) {
+            clearTimeout(updateStorageDebounceHandle);
+            updateStorageDebounceHandle = null;
+        }
+        if (delayMs <= 0) {
+            sm.updateStorage();
+            return;
+        }
+        updateStorageDebounceHandle = window.setTimeout(() => {
+            updateStorageDebounceHandle = null;
+            sm.updateStorage();
         }, delayMs);
     };
     sm.injectUI = function () {
@@ -537,12 +553,16 @@
         viewSettingsContainer.appendChild(sm.createPillToggle('unchanged', { title: "Show unchanged properties", id: 'sd-webui-sm-inspector-view-unchanged' }, 'sd-webui-sm-inspector-view-unchanged-checkbox', true, (isOn) => sm.inspector.dataset['showUnchanged'] = isOn, true));
         viewSettingsContainer.appendChild(sm.createPillToggle('missing/obsolete', { title: "Show properties that are missing from the current UI", id: 'sd-webui-sm-inspector-view-missing' }, 'sd-webui-sm-inspector-view-missing-checkbox', true, (isOn) => sm.inspector.dataset['showMissing'] = isOn, true));
         viewSettingsContainer.appendChild(sm.createPillToggle('Try applying missing/obsolete', { title: "Try applying the values of missing properties", id: 'sd-webui-sm-inspector-apply-missing' }, 'sd-webui-sm-inspector-apply-missing-checkbox', false, (isOn) => sm.inspector.dataset['applyMissing'] = isOn, true));
-        const nameChangeCallback = () => {
+        const nameInputCallback = () => {
             sm.setStateName(entry.data.createdAt, nameField.value);
             sm.updateEntryIndicators(entry);
         };
-        nameField.addEventListener('input', nameChangeCallback);
-        nameField.addEventListener('change', nameChangeCallback);
+        const nameCommitCallback = () => {
+            nameInputCallback();
+            sm.queueStorageUpdate(0);
+        };
+        nameField.addEventListener('input', nameInputCallback);
+        nameField.addEventListener('change', nameCommitCallback);
         favButton.addEventListener('click', () => {
             if (!entry.data.groups || entry.data.groups.indexOf('favourites') == -1) {
                 sm.addStateToGroup(entry.data.createdAt, 'favourites');
@@ -952,7 +972,7 @@
     };
     sm.setStateName = function (stateKey, name) {
         sm.memoryStorage.entries.data[stateKey].name = name;
-        sm.updateStorage();
+        sm.queueStorageUpdate();
     };
     sm.buildComponentMap = async function () {
         return sm.api.get("componentids")
@@ -1097,6 +1117,10 @@
             .catch(e => sm.utils.logResponseError("[State Manager] Getting file storage failed with error", e));
     };
     sm.updateStorage = async function () {
+        if (updateStorageDebounceHandle != null) {
+            clearTimeout(updateStorageDebounceHandle);
+            updateStorageDebounceHandle = null;
+        }
         sm.api.get("savelocation")
             .then(response => {
             if (!sm.utils.isValidResponse(response, 'location')) {
