@@ -932,16 +932,16 @@ body.sd-webui-sm-resizing {
 }
 
 .sd-webui-sm-inspector button.sd-webui-sm-inspector-fav-button {
-    background: #2f7edb;
-    border-color: #2a6ec1;
+    background: #2f9e44;
+    border-color: #27863a;
     color: #fff;
     line-height: 1.4rem;
     font-size: 1.4rem;
 }
 
 .sd-webui-sm-inspector button.sd-webui-sm-inspector-fav-button:hover {
-    background: #3f8cec;
-    border-color: #3479cf;
+    background: #3ab756;
+    border-color: #2f9e44;
 }
 
 .sd-webui-sm-inspector button.sd-webui-sm-inspector-fav-button[disabled] {
