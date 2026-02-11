@@ -1276,9 +1276,21 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
                 return;
             }
 
-            activeDraft.isFavourite = false;
-            syncConfigActionButtons();
-            sm.refreshActiveProfileDraftState();
+            if(!confirm("Remove this saved config?")){
+                return;
+            }
+
+            const stateKey = entry.data.createdAt;
+            const state = sm.memoryStorage.entries.data[stateKey];
+
+            if(state){
+                delete state.name;
+            }
+
+            sm.removeStateFromGroup(stateKey, 'favourites');
+            sm.activeProfileDraft = null;
+            sm.updateEntries();
+            sm.updateInspector();
         });
 
         deleteButton.addEventListener('click', () => {
