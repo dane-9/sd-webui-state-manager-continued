@@ -234,10 +234,37 @@ body.sd-webui-sm-modal-open {
     right: 0;
 }
 
-.sd-webui-sm-control button {
+.sd-webui-sm-control button:not(.sd-webui-sm-nav-save-current-config-button) {
     width: 2rem;
     aspect-ratio: 1;
     font-size: 1.1rem;
+}
+
+.sd-webui-sm-control .sd-webui-sm-nav-save-current-config-button {
+    width: 9rem;
+    min-width: 9rem;
+    max-width: none !important;
+	position: relative;                                                                                                                                                    
+    top: 4px;
+	right: 6px;
+    aspect-ratio: auto;
+    height: 1.5rem;
+    padding: 10px 10px;
+	border-radius: 4px;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+    background: #2563eb !important;
+    border-color: #2563eb !important;
+    color: #fff !important;
+}
+
+.sd-webui-sm-control .sd-webui-sm-nav-save-current-config-button:hover {
+    background: #1d4ed8 !important;
+    border-color: #1d4ed8 !important;
 }
 
 .sd-webui-sm-pill-toggle {

@@ -479,82 +479,32 @@
             checkbox: svelteClassFromSelector('input[type=checkbox]'),
             prompt: svelteClassFromSelector('#txt2img_prompt label')
         };
-        const quickSettingSaveMenu = sm.createElementWithClassList('div', 'sd-webui-sm-save-menu');
-        quickSettingSaveMenu.style.display = 'none';
-        const quickSettingSaveButton = sm.createElementWithClassList('button', 'sd-webui-sm-nav-save-button', 'sd-webui-sm-quicksettings-button', 'lg', 'secondary', 'gradio-button', 'tool', sm.svelteClasses.button);
+        const defaultQuickSettingSaveButtonText = 'Save Current UI as Config';
+        const quickSettingSaveButton = sm.createElementWithInnerTextAndClassList('button', defaultQuickSettingSaveButtonText, 'sd-webui-sm-nav-save-button', 'sd-webui-sm-nav-save-current-config-button', 'lg', 'secondary', 'gradio-button', sm.svelteClasses.button);
         quickSettingSaveButton.id = 'sd-webui-sm-quicksettings-button-save';
-        quickSettingSaveButton.appendChild(sm.createElementWithInnerTextAndClassList('div', '💾', 'icon'));
-        quickSettingSaveButton.addEventListener('click', () => {
-            if (quickSettingSaveMenu.style.display == 'none') {
-                quickSettingSaveMenu.style.display = 'block';
-                quickSettingSaveMenu.style.left = '0';
-                const right = quickSettingSaveMenu.getBoundingClientRect().right;
-                if (right > window.innerWidth) {
-                    quickSettingSaveMenu.style.left = `calc(${window.innerWidth - right}px - 1em)`;
-                }
-            }
-            else {
-                quickSettingSaveMenu.style.display = 'none';
-            }
-        });
-        quickSettingSaveButton.addEventListener('blur', e => {
-            if (!e.currentTarget.contains(e.relatedTarget)) { // not a child button that was clicked
-                quickSettingSaveMenu.style.display = 'none';
-            }
-        });
-        const quickSettingSaveCurrentButton = sm.createElementWithInnerTextAndClassList('button', 'Save current UI as config', 'lg', 'secondary', 'gradio-button', 'tool', 'svelte-cmf5ev');
-        const quickSettingSaveGeneratedButton = sm.createElementWithInnerTextAndClassList('button', 'Save last generation as config', 'lg', 'secondary', 'gradio-button', 'tool', 'svelte-cmf5ev');
-        quickSettingSaveMenu.appendChild(quickSettingSaveCurrentButton);
-        quickSettingSaveMenu.appendChild(quickSettingSaveGeneratedButton);
-        quickSettingSaveButton.appendChild(quickSettingSaveMenu);
-        const quickSettingSaveButtonBlur = e => {
-            if (!e.currentTarget.parentNode.contains(e.relatedTarget)) { // lost focus to an element outside the save buttons
-                quickSettingSaveMenu.style.display = 'none';
-            }
-        };
-        const showQuickSettingSaveButtonSuccess = success => {
-            const quickSettingsSaveButtonIconText = app.querySelector('#sd-webui-sm-quicksettings-button-save .icon');
-            if (success) {
-                quickSettingsSaveButtonIconText.innerText = '✓';
-                quickSettingsSaveButtonIconText.style.color = '#1fbb1f';
-            }
-            else {
-                quickSettingsSaveButtonIconText.innerText = '✖';
-                quickSettingsSaveButtonIconText.style.color = '#e63d3d';
-                quickSettingsSaveButtonIconText.parentNode.classList.add('sd-webui-sm-shake');
-            }
+        quickSettingSaveButton.title = "Save current UI settings as a config";
+        const showQuickSettingSaveButtonResult = (success) => {
+            quickSettingSaveButton.innerText = success ? 'Saved' : 'Save Failed';
+            quickSettingSaveButton.classList.toggle('sd-webui-sm-shake', !success);
             setTimeout(() => {
-                quickSettingsSaveButtonIconText.innerText = '💾';
-                quickSettingsSaveButtonIconText.style.color = '#ffffff';
-                quickSettingsSaveButtonIconText.parentNode.classList.remove('sd-webui-sm-shake');
-            }, 2000);
+                quickSettingSaveButton.innerText = defaultQuickSettingSaveButtonText;
+                quickSettingSaveButton.classList.remove('sd-webui-sm-shake');
+            }, 1600);
         };
-        quickSettingSaveCurrentButton.addEventListener('click', async () => {
+        quickSettingSaveButton.addEventListener('click', async () => {
             const generationType = sm.utils.getCurrentGenerationTypeFromUI();
             if (generationType != null) {
                 const currentState = await sm.getCurrentState(generationType);
                 currentState.name = "Saved UI " + new Date().toISOString().replace('T', ' ').replace(/\.\d+Z/, '');
                 currentState.preview = new Error().stack.match((/(http(.)+)\/javascript\/[a-zA-Z0-9]+\.js/))[1] + "/resources/icon-saved-ui.png";
                 sm.saveState(currentState, 'favourites');
-                showQuickSettingSaveButtonSuccess(true);
+                showQuickSettingSaveButtonResult(true);
                 sm.updateEntries();
             }
             else {
-                showQuickSettingSaveButtonSuccess(false);
+                showQuickSettingSaveButtonResult(false);
             }
         });
-        quickSettingSaveCurrentButton.addEventListener('blur', quickSettingSaveButtonBlur);
-        quickSettingSaveGeneratedButton.addEventListener('click', () => {
-            if (sm.lastUsedState) {
-                sm.saveLastUsedState('favourites');
-                showQuickSettingSaveButtonSuccess(true);
-                sm.updateEntries();
-            }
-            else {
-                showQuickSettingSaveButtonSuccess(false);
-            }
-        });
-        quickSettingSaveGeneratedButton.addEventListener('blur', quickSettingSaveButtonBlur);
         sm.panelContainer = sm.createElementWithClassList('div', 'sd-webui-sm-panel-container');
         const panel = sm.createElementWithClassList('div', 'sd-webui-sm-side-panel');
         sm.sidePanel = panel;
