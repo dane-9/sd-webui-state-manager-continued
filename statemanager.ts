@@ -509,6 +509,45 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
             entries.appendChild(entry);
         }
+
+        const getEntryFromEvent = (event: Event): Entry | null => {
+            if(!(event.target instanceof Element)){
+                return null;
+            }
+
+            const entry = <Entry | null>event.target.closest('.sd-webui-sm-entry');
+            if(!entry || !entry.data || entry.style.display == 'none'){
+                return null;
+            }
+
+            return entry;
+        };
+
+        entries.addEventListener('click', (event: MouseEvent) => {
+            const entry = getEntryFromEvent(event);
+            if(!entry){
+                return;
+            }
+
+            if(event.shiftKey){
+                sm.selection.select(entry, 'range');
+            }
+            else if(event.ctrlKey || event.metaKey){
+                sm.selection.select(entry, 'add');
+            }
+            else{
+                sm.selection.select(entry, 'single');
+            }
+        });
+
+        entries.addEventListener('dblclick', (event: MouseEvent) => {
+            const entry = getEntryFromEvent(event);
+            if(!entry){
+                return;
+            }
+
+            sm.applyAll(entry.data);
+        });
         
         // Add to DOM
         panel.appendChild(nav);
@@ -663,20 +702,6 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             entry.querySelector('.time').innerText = `${creationDate.getHours().toString().padStart(2, '0')}:${creationDate.getMinutes().toString().padStart(2, '0')}:${creationDate.getSeconds().toString().padStart(2, '0')}`;
             
             sm.updateEntryIndicators(entry);
-
-            entry.addEventListener('click', e => {
-                if(e.shiftKey){
-                    sm.selection.select(entry, 'range');
-                }
-                else if(e.ctrlKey || e.metaKey){
-                    sm.selection.select(entry, 'add');
-                }
-                else{
-                    sm.selection.select(entry, 'single');
-                }
-            }, {signal: entryEventListenerAbortController.signal});
-            
-            entry.addEventListener('dblclick', () => sm.applyAll(data), {signal: entryEventListenerAbortController.signal});
         }
 
         for(let i = numEntries; i < maxEntriesPerPage.modal; i++){

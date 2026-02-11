@@ -332,6 +332,38 @@
             entry.appendChild(footer);
             entries.appendChild(entry);
         }
+        const getEntryFromEvent = (event) => {
+            if (!(event.target instanceof Element)) {
+                return null;
+            }
+            const entry = event.target.closest('.sd-webui-sm-entry');
+            if (!entry || !entry.data || entry.style.display == 'none') {
+                return null;
+            }
+            return entry;
+        };
+        entries.addEventListener('click', (event) => {
+            const entry = getEntryFromEvent(event);
+            if (!entry) {
+                return;
+            }
+            if (event.shiftKey) {
+                sm.selection.select(entry, 'range');
+            }
+            else if (event.ctrlKey || event.metaKey) {
+                sm.selection.select(entry, 'add');
+            }
+            else {
+                sm.selection.select(entry, 'single');
+            }
+        });
+        entries.addEventListener('dblclick', (event) => {
+            const entry = getEntryFromEvent(event);
+            if (!entry) {
+                return;
+            }
+            sm.applyAll(entry.data);
+        });
         // Add to DOM
         panel.appendChild(nav);
         panel.appendChild(entryContainer);
@@ -449,18 +481,6 @@
             entry.querySelector('.date').innerText = `${creationDate.getDate().toString().padStart(2, '0')}-${(creationDate.getMonth() + 1).toString().padStart(2, '0')}-${creationDate.getFullYear().toString().padStart(2, '0')}`;
             entry.querySelector('.time').innerText = `${creationDate.getHours().toString().padStart(2, '0')}:${creationDate.getMinutes().toString().padStart(2, '0')}:${creationDate.getSeconds().toString().padStart(2, '0')}`;
             sm.updateEntryIndicators(entry);
-            entry.addEventListener('click', e => {
-                if (e.shiftKey) {
-                    sm.selection.select(entry, 'range');
-                }
-                else if (e.ctrlKey || e.metaKey) {
-                    sm.selection.select(entry, 'add');
-                }
-                else {
-                    sm.selection.select(entry, 'single');
-                }
-            }, { signal: entryEventListenerAbortController.signal });
-            entry.addEventListener('dblclick', () => sm.applyAll(data), { signal: entryEventListenerAbortController.signal });
         }
         for (let i = numEntries; i < maxEntriesPerPage.modal; i++) {
             entries.childNodes[i].style.display = 'none';
