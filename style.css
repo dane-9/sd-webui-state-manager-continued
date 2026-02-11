@@ -424,31 +424,34 @@ body.sd-webui-sm-modal-open {
     opacity: 1;
 }
 
-/* .sd-webui-sm-entry.favourite {
+/* .sd-webui-sm-entry.config {
     position: relative;
     overflow: visible;
 } */
 
-.sd-webui-sm-entry.named::before, .sd-webui-sm-entry.favourite::after {
+.sd-webui-sm-entry.configured::before, .sd-webui-sm-entry.config::after {
     position: absolute;
     width: 22px;
     aspect-ratio: 1;
     filter: drop-shadow(2px 2px 4px black);
 }
 
-.sd-webui-sm-entry.named::before {
-    content: '🔖';
+.sd-webui-sm-entry.configured::before {
+    content: '⚙';
     /* top: 2px; */
     bottom: -4px;
     left: 2px;
-    font-size: 2.8em;
+    font-size: 2.3em;
 }
 
-.sd-webui-sm-entry.favourite::after {
-    content: ' ';
-    right: 2px;
-    bottom: 2px;
-    background: url("resources/heart.svg");
+.sd-webui-sm-entry.config::after {
+    content: '+';
+    right: 4px;
+    bottom: 0;
+    color: white;
+    font-weight: 900;
+    font-size: 1.5em;
+    text-shadow: 0 0 4px #000;
     opacity: .9;
 }
 
@@ -928,19 +931,52 @@ body.sd-webui-sm-resizing {
     margin-left: 5px;
 }
 
-.sd-webui-sm-inspector .sd-webui-sm-inspector-fav-button {
-    color: #999;
-}
-
-.sd-webui-sm-inspector .sd-webui-sm-inspector-fav-button.on {
-    background: var(--secondary-600);
-    color: white;
+.sd-webui-sm-inspector button.sd-webui-sm-inspector-fav-button {
+    background: #2f7edb;
+    border-color: #2a6ec1;
+    color: #fff;
     line-height: 1.4rem;
     font-size: 1.4rem;
 }
 
-.sd-webui-sm-inspector .sd-webui-sm-inspector-fav-button.on:hover {
-    background: var(--secondary-500);
+.sd-webui-sm-inspector button.sd-webui-sm-inspector-fav-button:hover {
+    background: #3f8cec;
+    border-color: #3479cf;
+}
+
+.sd-webui-sm-inspector button.sd-webui-sm-inspector-fav-button[disabled] {
+    background: var(--button-secondary-background-fill);
+    border-color: var(--button-secondary-border-color);
+    color: #999;
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+.sd-webui-sm-inspector button.sd-webui-sm-inspector-unsave-button {
+    background: #f1c232;
+    border-color: #d6a300;
+    color: #1f1f1f;
+}
+
+.sd-webui-sm-inspector button.sd-webui-sm-inspector-unsave-button:hover {
+    background: #ffd966;
+    border-color: #e0b300;
+}
+
+.sd-webui-sm-inspector button.sd-webui-sm-inspector-unsave-button[disabled] {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
+.sd-webui-sm-inspector button.sd-webui-sm-inspector-delete-button {
+    background: #d13f3f;
+    border-color: #b52d2d;
+    color: #fff;
+}
+
+.sd-webui-sm-inspector button.sd-webui-sm-inspector-delete-button:hover {
+    background: #e55757;
+    border-color: #c63a3a;
 }
 
 .sd-webui-sm-inspector .prompt {

@@ -256,9 +256,13 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
         draft.dirty = hasNameChanges || hasFavouriteChanges || hasCheckboxChanges;
 
+        if(!draft.originalIsFavourite){
+            draft.dirty = false;
+        }
+
         if(Array.isArray(sm.activeProfileSaveButtons)){
             for(const button of sm.activeProfileSaveButtons){
-                button.disabled = !draft.dirty;
+                button.disabled = !draft.originalIsFavourite || !draft.dirty;
             }
         }
     }
@@ -301,7 +305,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             return true;
         }
 
-        const shouldDiscard = confirm("You have unsaved changes for this profile. Discard them and continue?");
+        const shouldDiscard = confirm("You have unsaved config changes. Discard them and continue?");
 
         if(shouldDiscard){
             sm.activeProfileDraft = null;
@@ -350,6 +354,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         const entry = sm.selection.entries[0];
         const draft: ActiveProfileDraft = sm.ensureActiveProfileDraft(entry);
 
+        if(!draft.originalIsFavourite){
+            return;
+        }
+
         if(!draft.dirty){
             return;
         }
@@ -361,7 +369,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             saveMode = 'new';
         }
         else{
-            const overwrite = confirm("Overwrite this profile with your changes?\nPress Cancel to save as a new profile instead.");
+            const overwrite = confirm("Overwrite this config with your changes?\nPress Cancel to save as a new config instead.");
             saveMode = overwrite ? 'overwrite' : 'new';
         }
 
@@ -477,8 +485,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             }
         });
 
-        const quickSettingSaveCurrentButton = sm.createElementWithInnerTextAndClassList('button', 'Save current UI settings', 'lg', 'secondary', 'gradio-button', 'tool', 'svelte-cmf5ev');
-        const quickSettingSaveGeneratedButton = sm.createElementWithInnerTextAndClassList('button', 'Save last generation settings', 'lg', 'secondary', 'gradio-button', 'tool', 'svelte-cmf5ev');
+        const quickSettingSaveCurrentButton = sm.createElementWithInnerTextAndClassList('button', 'Save current UI as config', 'lg', 'secondary', 'gradio-button', 'tool', 'svelte-cmf5ev');
+        const quickSettingSaveGeneratedButton = sm.createElementWithInnerTextAndClassList('button', 'Save last generation as config', 'lg', 'secondary', 'gradio-button', 'tool', 'svelte-cmf5ev');
 
         quickSettingSaveMenu.appendChild(quickSettingSaveCurrentButton);
         quickSettingSaveMenu.appendChild(quickSettingSaveGeneratedButton);
@@ -531,7 +539,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
         quickSettingSaveGeneratedButton.addEventListener('click', () => {
             if(sm.lastUsedState){
-                sm.saveLastUsedState();
+                sm.saveLastUsedState('favourites');
                 showQuickSettingSaveButtonSuccess(true);
                 sm.updateEntries();
             }
@@ -628,7 +636,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         }
 
         createNavTab('History', 'history', true);
-        createNavTab('Favourites', 'favourites');
+        createNavTab('Configs', 'favourites');
 
         const autosaveContainer = sm.createElementWithClassList('div', 'sd-webui-sm-quicksetting');
         const autosaveCheckbox = sm.createElementWithClassList('input', sm.svelteClasses.checkbox);
@@ -636,7 +644,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         autosaveCheckbox.type = 'checkbox';
         autosaveCheckbox.checked = sm.autoSaveHistory;
         
-        const autosaveLabel = sm.createElementWithInnerTextAndClassList('label', 'Auto-save');
+        const autosaveLabel = sm.createElementWithInnerTextAndClassList('label', 'Auto-save history');
         autosaveLabel.htmlFor = 'sd-webui-sm-autosave';
 
         autosaveContainer.appendChild(autosaveCheckbox);
@@ -770,7 +778,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
         filterRow.appendChild(createFilterToggle('txt2img'));
         filterRow.appendChild(createFilterToggle('img2img'));
-        filterRow.appendChild(sm.createPillToggle('★', {title: "Only show favourites", id: 'sd-webui-sm-filter-favourites'}, 'sd-webui-sm-filter-favourites-checkbox', false, (isOn: boolean) => {
+        filterRow.appendChild(sm.createPillToggle('Saved Configs Only', {title: "Only show saved configs", id: 'sd-webui-sm-filter-favourites'}, 'sd-webui-sm-filter-favourites-checkbox', false, (isOn: boolean) => {
             sm.entryFilter.onlyFavourites = isOn;
             sm.queueEntriesUpdate(updateEntriesDebounceMs);
         }, true));
@@ -1125,8 +1133,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     }
 
     sm.updateEntryIndicators = function(entry){
-        entry.classList.toggle('favourite', (entry.data.groups?.indexOf('favourites') ?? -1) > -1);
-        entry.classList.toggle('named', entry.data.hasOwnProperty('name') && entry.data.name != undefined && entry.data.name.length > 0);
+        entry.classList.toggle('config', (entry.data.groups?.indexOf('favourites') ?? -1) > -1);
+        entry.classList.toggle('configured', entry.data.hasOwnProperty('name') && entry.data.name != undefined && entry.data.name.length > 0);
     }
 
     sm.updateInspector = async function(){
@@ -1141,13 +1149,14 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         else if(sm.selection.entries.length > 1){
             sm.activeProfileDraft = null;
             const multiSelectContainer = sm.createElementWithClassList('div', 'category', 'meta-container');
-            const favouriteAllButton = sm.createElementWithInnerTextAndClassList('button', `♥ Favourite all ${sm.selection.entries.length} selected items`, 'sd-webui-sm-inspector-wide-button', 'sd-webui-sm-inspector-load-button');
+            const allAreConfigs = sm.selection.entries.every(e => e.data.groups && e.data.groups.indexOf('favourites') > -1);
+            const configAllButton = sm.createElementWithInnerTextAndClassList('button', allAreConfigs ? `Remove ${sm.selection.entries.length} from saved configs` : `Save all ${sm.selection.entries.length} as configs`, 'sd-webui-sm-inspector-wide-button', 'sd-webui-sm-inspector-load-button');
             const deleteAllButton = sm.createElementWithInnerTextAndClassList('button', `🗑 Delete all ${sm.selection.entries.length} selected items`, 'sd-webui-sm-inspector-wide-button', 'sd-webui-sm-inspector-load-button');
             
-            multiSelectContainer.appendChild(favouriteAllButton);
+            multiSelectContainer.appendChild(configAllButton);
             multiSelectContainer.appendChild(deleteAllButton);
 
-            favouriteAllButton.addEventListener('click', () => {
+            configAllButton.addEventListener('click', () => {
                 const addOrRemove = sm.selection.entries.every(e => e.data.groups && e.data.groups.indexOf('favourites') > -1) ? sm.removeStateFromGroup : sm.addStateToGroup;
 
                 for(let entry of sm.selection.entries){
@@ -1175,21 +1184,32 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         nameField.type = 'text';
         nameField.value = activeDraft.name || '';
         
-        const favButton = sm.createElementWithInnerTextAndClassList('button', '♥', 'sd-webui-sm-inspector-fav-button');
+        const favButton = sm.createElementWithInnerTextAndClassList('button', '+', 'sd-webui-sm-inspector-fav-button');
+        const unsaveButton = sm.createElementWithInnerTextAndClassList('button', '−', 'sd-webui-sm-inspector-unsave-button');
         const deleteButton = sm.createElementWithInnerTextAndClassList('button', '🗑', 'sd-webui-sm-inspector-delete-button');
         const saveChangesButton = <HTMLButtonElement>sm.createElementWithInnerTextAndClassList('button', 'Save Changes', 'sd-webui-sm-inspector-save-button', 'sd-webui-sm-inspector-load-button');
         const loadAllButton = sm.createElementWithInnerTextAndClassList('button', 'Apply Selected', 'sd-webui-sm-inspector-load-all-button', 'sd-webui-sm-inspector-load-button');
 
-        favButton.title = "Add this entry to your favourites";
+        favButton.title = "Save as config";
+        unsaveButton.title = "Remove from saved configs";
         deleteButton.title = "Delete this entry (warning: this cannot be undone)";
-        saveChangesButton.title = "Save edited profile settings";
+        saveChangesButton.title = activeDraft.originalIsFavourite ? "Save edited config settings" : "Save Changes is only available for saved configs";
         loadAllButton.title = "Apply selected settings to the current UI";
 
-        favButton.classList.toggle('on', activeDraft.isFavourite);
-        saveChangesButton.disabled = !activeDraft.dirty;
+        const syncConfigActionButtons = () => {
+            const hasConfigName = `${activeDraft.name ?? ''}`.trim().length > 0;
+            favButton.classList.toggle('on', activeDraft.isFavourite);
+            favButton.disabled = activeDraft.isFavourite || !hasConfigName;
+            favButton.title = activeDraft.isFavourite ? "Already saved as config" : (hasConfigName ? "Save as config" : "Enter a config name first");
+            unsaveButton.disabled = !activeDraft.isFavourite;
+        };
+
+        syncConfigActionButtons();
+        saveChangesButton.disabled = !activeDraft.originalIsFavourite || !activeDraft.dirty;
 
         metaContainer.appendChild(nameField);
         metaContainer.appendChild(favButton);
+        metaContainer.appendChild(unsaveButton);
         metaContainer.appendChild(deleteButton);
         metaContainer.appendChild(saveChangesButton);
         metaContainer.appendChild(loadAllButton);
@@ -1206,14 +1226,58 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
         const nameInputCallback = () => {
             activeDraft.name = nameField.value;
+            syncConfigActionButtons();
             sm.refreshActiveProfileDraftState();
         };
 
         nameField.addEventListener('input', nameInputCallback);
 
         favButton.addEventListener('click', () => {
-            activeDraft.isFavourite = !activeDraft.isFavourite;
-            favButton.classList.toggle('on', activeDraft.isFavourite);
+            if(activeDraft.isFavourite){
+                return;
+            }
+
+            if(!activeDraft.originalIsFavourite){
+                const newState = <State>JSON.parse(JSON.stringify(entry.data));
+                const finalName = `${activeDraft.name ?? ''}`.trim();
+
+                if(finalName.length > 0){
+                    newState.name = finalName;
+                }
+                else{
+                    delete newState.name;
+                }
+
+                newState.groups = sm.getGroupsWithFavouriteState(entry.data.groups || [], true);
+                newState.inspectorState = {
+                    checkboxes: {...(activeDraft.inspectorState.checkboxes || {})}
+                };
+
+                const savedState = sm.upsertState(newState);
+                sm.activeProfileDraft = null;
+                sm.updateEntries();
+
+                const entries = sm.panelContainer.querySelector('.sd-webui-sm-entries');
+                const targetEntry = <Entry | undefined>Array.from(entries.childNodes).find((candidate: Entry) => `${candidate?.data?.createdAt ?? ''}` == `${savedState.createdAt}`);
+
+                if(targetEntry){
+                    sm.selection.select(targetEntry, 'single');
+                }
+                else{
+                    sm.updateInspector();
+                }
+
+                return;
+            }
+        });
+
+        unsaveButton.addEventListener('click', () => {
+            if(!activeDraft.isFavourite){
+                return;
+            }
+
+            activeDraft.isFavourite = false;
+            syncConfigActionButtons();
             sm.refreshActiveProfileDraftState();
         });
 
@@ -1480,8 +1544,8 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         if(sm.getMode() == 'modal'){
             const stickyActionContainer = sm.createElementWithClassList('sd-webui-sm-inspector-save-sticky');
             const stickySaveButton = <HTMLButtonElement>sm.createElementWithInnerTextAndClassList('button', 'Save Changes', 'sd-webui-sm-inspector-save-button', 'sd-webui-sm-inspector-load-button');
-            stickySaveButton.title = "Save edited profile settings";
-            stickySaveButton.disabled = !activeDraft.dirty;
+            stickySaveButton.title = activeDraft.originalIsFavourite ? "Save edited config settings" : "Save Changes is only available for saved configs";
+            stickySaveButton.disabled = !activeDraft.originalIsFavourite || !activeDraft.dirty;
             stickySaveButton.addEventListener('click', () => sm.saveActiveProfileChanges());
             stickyActionContainer.appendChild(loadAllButton);
             stickyActionContainer.appendChild(stickySaveButton);
@@ -2160,7 +2224,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     }
 
     sm.clearHistory = function(): void{
-        if(!confirm(`Warning! You are about to delete all entries that are not favourited and do not have a name. This operation can not be undone! Are you sure you wish to continue?`)){
+        if(!confirm(`Warning! You are about to delete all entries that are not saved as configs and do not have a name. This operation can not be undone! Are you sure you wish to continue?`)){
             return;
         }
         
@@ -2361,7 +2425,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         }
     }
 
-    sm.saveLastUsedState = function(): void{
+    sm.saveLastUsedState = function(group: Group = 'history'): void{
         if(!sm.lastUsedState){
             alert("No previous state found.");
             return;
@@ -2385,9 +2449,9 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             sm.lastUsedState.componentSettings[seedPath] = seedFromHTMLInfo;
         }
 
-        sm.saveState(sm.lastUsedState, 'history');
+        sm.saveState(sm.lastUsedState, group);
 
-        if(sm.entryFilter.group == 'history'){
+        if(sm.entryFilter.group == group){
             sm.updateEntries();
         }
     }
