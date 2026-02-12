@@ -3,6 +3,7 @@
     --sm-side-panel-width: 0;
     --sm-side-panel-slide-speed: .15s;
     --sm-entry-size: 74.5px;
+    --sm-entry-type-badge-height: 18px;
 
     --sm-value-diff-same: green;
     --sm-value-diff-changed: red;
@@ -419,11 +420,11 @@ body.sd-webui-sm-modal-open {
     right: 1px;
     z-index: 2;
     border-radius: 4px;
-	min-height: 18px;
+    min-height: var(--sm-entry-type-badge-height);
     background-color: #0000 !important;
     color: var(--color-accent-soft);
     font-size: 1em;
-    padding: 3px 8x;
+    padding: 3px 8px;
     width: 22px;
     white-space: nowrap;
     letter-spacing: 3px;
@@ -487,8 +488,14 @@ body.sd-webui-sm-modal-open {
     width: 100%;
     color: black;
     font-weight: 600;
-    padding: 2px 7px;
+    padding: 0 3px;
     border-radius: 4px;
+}
+
+.sd-webui-sm-entry-container[data-show-entry-footer="true"] .sd-webui-sm-entry.active .footer,
+.sd-webui-sm-entry-container[data-show-entry-footer="true"][data-show-config-type-badge="true"] .sd-webui-sm-entry.config:not(.active) .footer {
+    bottom: var(--sm-entry-type-badge-height);
+    border-radius: 4px 4px 0 0;
 }
 
 .sd-webui-sm-entry-container[data-show-entry-footer="false"] .sd-webui-sm-entry .footer {
@@ -1053,12 +1060,6 @@ body.sd-webui-sm-resizing {
     left: 5px;
     mask-image: url("resources/icon-contrast.svg");
     -webkit-mask-image: url("resources/icon-contrast.svg");
-}
-
-#sd-webui-sm-inspector-view-entry-footer label::after {
-    left: 6px;
-    mask-image: url("resources/icon-date.svg");
-    -webkit-mask-image: url("resources/icon-date.svg");
 }
 
 .sd-webui-sm-inspector .param-container .hash {

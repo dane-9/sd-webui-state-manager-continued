@@ -27,6 +27,7 @@
     sm.uiSettings = {
         smallViewEntriesPerPage: entriesPerPage,
         showSmallViewPagination: false,
+        showEntryFooter: false,
         defaultSort: 'newest',
         rememberFilters: false,
         defaultShowFavouritesInHistory: false,
@@ -67,6 +68,7 @@
         const normalised = {
             smallViewEntriesPerPage: entriesPerPage,
             showSmallViewPagination: false,
+            showEntryFooter: false,
             defaultSort: 'newest',
             rememberFilters: false,
             defaultShowFavouritesInHistory: false,
@@ -82,6 +84,7 @@
         }
         normalised.smallViewEntriesPerPage = Math.max(1, Number.parseInt(`${settings.smallViewEntriesPerPage ?? ''}`) || entriesPerPage);
         normalised.showSmallViewPagination = Boolean(settings.showSmallViewPagination);
+        normalised.showEntryFooter = Boolean(settings.showEntryFooter);
         normalised.defaultSort = sm.getNormalisedSortValue(settings.defaultSort);
         normalised.rememberFilters = Boolean(settings.rememberFilters);
         normalised.defaultShowFavouritesInHistory = Boolean(settings.defaultShowFavouritesInHistory);
@@ -139,6 +142,7 @@
         }
         const smallViewEntriesInput = sm.panelContainer.querySelector('#sd-webui-sm-settings-small-view-entries');
         const showSmallViewPaginationCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-show-small-view-pagination');
+        const showEntryFooterCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-show-entry-footer');
         const defaultSortSelect = sm.panelContainer.querySelector('#sd-webui-sm-settings-default-sort');
         const rememberFiltersCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-remember-filters');
         const defaultShowFavouritesCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-default-show-favourites');
@@ -153,6 +157,9 @@
         }
         if (showSmallViewPaginationCheckbox) {
             showSmallViewPaginationCheckbox.checked = Boolean(sm.uiSettings.showSmallViewPagination);
+        }
+        if (showEntryFooterCheckbox) {
+            showEntryFooterCheckbox.checked = Boolean(sm.uiSettings.showEntryFooter);
         }
         if (defaultSortSelect) {
             defaultSortSelect.value = sm.getNormalisedSortValue(sm.uiSettings.defaultSort);
@@ -204,6 +211,13 @@
             return;
         }
         searchRow.style.display = sm.uiSettings.hideSearchByDefault ? 'none' : '';
+    };
+    sm.syncEntryFooterVisibility = function () {
+        const entryContainer = sm.panelContainer?.querySelector('.sd-webui-sm-entry-container');
+        if (!entryContainer) {
+            return;
+        }
+        entryContainer.dataset['showEntryFooter'] = `${Boolean(sm.uiSettings.showEntryFooter)}`;
     };
     sm.syncConfigCardNameVisibility = function () {
         const entryContainer = sm.panelContainer?.querySelector('.sd-webui-sm-entry-container');
@@ -257,6 +271,7 @@
         sm.syncPanelTabButtons?.();
         sm.syncPanelTabVisibility?.();
         sm.syncSearchRowVisibility?.();
+        sm.syncEntryFooterVisibility?.();
         sm.syncConfigCardNameVisibility?.();
         sm.syncConfigTypeBadgeVisibility?.();
         sm.syncPaginationInteractionState?.();
@@ -747,7 +762,6 @@
         }, true);
         filterRow.appendChild(showSavedConfigsToggle);
         updateShowSavedConfigsToggleVisibility();
-        filterRow.appendChild(sm.createPillToggle('', { title: "Display creation time in entries", id: 'sd-webui-sm-inspector-view-entry-footer' }, 'sd-webui-sm-inspector-view-entry-footer-checkbox', false, (isOn) => entryContainer.dataset['showEntryFooter'] = isOn, true));
         const sortLabel = sm.createElementWithInnerTextAndClassList('label', 'Sort');
         sortLabel.htmlFor = 'sd-webui-sm-sort';
         const sortSelect = document.createElement('select');
@@ -845,6 +859,16 @@
             sm.queueEntriesUpdate(0);
         });
         settingsList.appendChild(createSettingsRow('Show Small View Pagination', 'Display page controls in small view.', settingsShowSmallViewPagination));
+        const settingsShowEntryFooter = document.createElement('input');
+        settingsShowEntryFooter.id = 'sd-webui-sm-settings-show-entry-footer';
+        settingsShowEntryFooter.type = 'checkbox';
+        settingsShowEntryFooter.classList.add(sm.svelteClasses.checkbox);
+        settingsShowEntryFooter.addEventListener('change', () => {
+            sm.uiSettings.showEntryFooter = settingsShowEntryFooter.checked;
+            sm.saveUISettings();
+            sm.syncEntryFooterVisibility?.();
+        });
+        settingsList.appendChild(createSettingsRow('Display Creation Time in Entries', 'Show date/time footer on entry cards.', settingsShowEntryFooter));
         const settingsDefaultSort = document.createElement('select');
         settingsDefaultSort.id = 'sd-webui-sm-settings-default-sort';
         settingsDefaultSort.classList.add('sd-webui-sm-sort');
@@ -1263,12 +1287,25 @@
             entry.classList.toggle('active', sm.selection.selectedStateKeys.has(entryStateKey));
             const creationDate = new Date(data.createdAt);
             const configName = `${data.name ?? ''}`.trim();
+            const day = creationDate.getDate().toString().padStart(2, '0');
+            const month = (creationDate.getMonth() + 1).toString().padStart(2, '0');
+            const year = creationDate.getFullYear().toString().padStart(2, '0');
+            const hours = creationDate.getHours().toString().padStart(2, '0');
+            const minutes = creationDate.getMinutes().toString().padStart(2, '0');
+            const seconds = creationDate.getSeconds().toString().padStart(2, '0');
+            const fullDateText = `${day}/${month}/${year}`;
+            const fullTimeText = `${hours}:${minutes}:${seconds}`;
+            const fullTimestamp = `${fullDateText} ${fullTimeText}`;
+            const dateElement = entry.querySelector('.date');
+            const timeElement = entry.querySelector('.time');
             entry.querySelector('.type').innerText = `${data.type == 'txt2img' ? '🖋' : '🖼️'} ${data.type}`;
             entry.querySelector('.config-name').innerText = configName;
             entry.querySelector('.config-name').title = configName;
             entry.classList.toggle('has-config-name', configName.length > 0);
-            entry.querySelector('.date').innerText = `${creationDate.getDate().toString().padStart(2, '0')}-${(creationDate.getMonth() + 1).toString().padStart(2, '0')}-${creationDate.getFullYear().toString().padStart(2, '0')}`;
-            entry.querySelector('.time').innerText = `${creationDate.getHours().toString().padStart(2, '0')}:${creationDate.getMinutes().toString().padStart(2, '0')}:${creationDate.getSeconds().toString().padStart(2, '0')}`;
+            dateElement.innerText = fullDateText;
+            timeElement.innerText = `${hours}:${minutes}`;
+            dateElement.title = fullTimestamp;
+            timeElement.title = fullTimestamp;
             sm.updateEntryIndicators(entry);
         }
         for (let i = numEntries; i < entries.childNodes.length; i++) {
