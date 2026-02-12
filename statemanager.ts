@@ -128,6 +128,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     sm.autoSaveHistory = false;
     sm.lastHeadImage = null;
     sm.lastUsedState = null;
+    sm.quickMenuSelectedStateKey = null;
     sm.activePanelTab = 'history';
     sm.uiSettings = {
         historySmallViewEntriesPerPage: entriesPerPage,
@@ -415,11 +416,146 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         entryContainer.dataset['showConfigTypeBadge'] = `${showTypeBadge}`;
     }
 
+    sm.getQuickConfigMenuStates = function(): State[]{
+        if(!sm.memoryStorage?.entries?.data){
+            return [];
+        }
+
+        return Object.values(sm.memoryStorage.entries.data)
+            .filter((state: State) => (state.groups?.indexOf('favourites') ?? -1) > -1)
+            .sort((a: State, b: State) => (Number(b.createdAt ?? 0) || 0) - (Number(a.createdAt ?? 0) || 0))
+            .slice(0, 10);
+    }
+
+    sm.syncQuickConfigApplyButtonState = function(): void{
+        const applyButton = <HTMLButtonElement | null>(sm.quickConfigApplyButton || null);
+
+        if(!applyButton){
+            return;
+        }
+
+        const isModal = Boolean(sm.panelContainer?.classList.contains('sd-webui-sm-modal-panel'));
+
+        if(isModal){
+            applyButton.classList.add('sd-webui-sm-hidden');
+            applyButton.disabled = true;
+            applyButton.title = 'Available only in docked small view';
+            return;
+        }
+
+        const selectedStateKey = `${sm.quickMenuSelectedStateKey ?? ''}`;
+        const hasSelection = selectedStateKey.length > 0 && Boolean(sm.memoryStorage?.entries?.data?.[selectedStateKey]);
+        const shouldShow = Boolean(sm.uiSettings.collapseSmallViewAccordion && hasSelection);
+        applyButton.classList.toggle('sd-webui-sm-hidden', !shouldShow);
+        applyButton.disabled = !hasSelection;
+        applyButton.title = hasSelection ? 'Apply selected quick config' : 'Select a quick config first';
+    }
+
+    sm.syncModalQuickControlsState = function(): void{
+        const isModal = Boolean(sm.panelContainer?.classList.contains('sd-webui-sm-modal-panel'));
+        const quickSaveButton = <HTMLButtonElement | null>(sm.quickSettingSaveButton || null);
+        const quickApplyButton = <HTMLButtonElement | null>(sm.quickConfigApplyButton || null);
+        const quickMenuContainer = <HTMLElement | null>(sm.quickConfigMenuContainer || null);
+        const accordionToggleButton = <HTMLButtonElement | null>(sm.smallViewAccordionToggleButton || null);
+
+        if(quickSaveButton){
+            quickSaveButton.classList.toggle('sd-webui-sm-hidden', isModal);
+        }
+
+        if(isModal && quickMenuContainer){
+            quickMenuContainer.style.display = 'none';
+        }
+
+        if(isModal && quickApplyButton){
+            quickApplyButton.classList.add('sd-webui-sm-hidden');
+            quickApplyButton.disabled = true;
+        }
+
+        if(accordionToggleButton){
+            accordionToggleButton.classList.toggle('sd-webui-sm-hidden', isModal);
+            accordionToggleButton.disabled = isModal;
+
+            if(isModal){
+                accordionToggleButton.style.setProperty('display', 'none', 'important');
+            }
+            else{
+                accordionToggleButton.style.removeProperty('display');
+            }
+        }
+    }
+
+    sm.applyQuickSelectedConfig = function(): void{
+        const selectedStateKey = `${sm.quickMenuSelectedStateKey ?? ''}`;
+        const targetState = sm.memoryStorage?.entries?.data?.[selectedStateKey];
+
+        if(!targetState){
+            sm.syncQuickConfigApplyButtonState?.();
+            return;
+        }
+
+        if(!sm.canProceedWithApplyAction()){
+            return;
+        }
+
+        sm.applyAll(targetState);
+        sm.quickMenuSelectedStateKey = null;
+        sm.renderQuickConfigMenu?.();
+        sm.syncQuickConfigApplyButtonState?.();
+    }
+
+    sm.renderQuickConfigMenu = function(): void{
+        const container = <HTMLElement | null>(sm.quickConfigMenuContainer || null);
+
+        if(!container){
+            return;
+        }
+
+        const showQuickMenu = Boolean(sm.uiSettings.collapseSmallViewAccordion && !sm.panelContainer?.classList.contains('sd-webui-sm-modal-panel'));
+        container.style.display = showQuickMenu ? 'flex' : 'none';
+
+        if(!showQuickMenu){
+            sm.syncQuickConfigApplyButtonState?.();
+            return;
+        }
+
+        container.innerHTML = '';
+        const quickConfigs = sm.getQuickConfigMenuStates();
+        const quickConfigKeys = new Set<string>(quickConfigs.map((state: State) => `${state.createdAt ?? ''}`));
+
+        if(`${sm.quickMenuSelectedStateKey ?? ''}`.length > 0 && !quickConfigKeys.has(`${sm.quickMenuSelectedStateKey}`)){
+            sm.quickMenuSelectedStateKey = null;
+        }
+
+        for(const state of quickConfigs){
+            const button = <HTMLButtonElement>sm.createElementWithClassList('button', 'sd-webui-sm-quick-config-item');
+            const stateKey = `${state.createdAt ?? ''}`;
+            const name = `${state.name ?? ''}`.trim();
+            const fallbackDate = new Date(Number(state.createdAt ?? Date.now())).toISOString().replace('T', ' ').replace(/\.\d+Z/, '');
+            button.title = name.length > 0 ? name : `Config ${fallbackDate}`;
+            button.setAttribute('aria-label', button.title);
+            button.style.backgroundImage = state.preview ? `url("${state.preview}")` : '';
+            button.classList.toggle('active', `${sm.quickMenuSelectedStateKey ?? ''}` == stateKey);
+
+            button.addEventListener('click', (event: MouseEvent) => {
+                event.preventDefault();
+                event.stopPropagation();
+                sm.quickMenuSelectedStateKey = stateKey;
+                sm.syncQuickConfigApplyButtonState?.();
+                sm.renderQuickConfigMenu?.();
+            });
+
+            container.appendChild(button);
+        }
+
+        sm.syncQuickConfigApplyButtonState?.();
+    }
+
     sm.syncSmallViewAccordionState = function(){
         const entryContainer = <HTMLElement | null>sm.panelContainer?.querySelector('.sd-webui-sm-entry-container');
         const inspector = <HTMLElement | null>sm.inspector || null;
         const settingsPanel = <HTMLElement | null>sm.panelContainer?.querySelector('.sd-webui-sm-settings-panel');
-        const isCollapsed = Boolean(sm.uiSettings.collapseSmallViewAccordion);
+        const isModal = Boolean(sm.panelContainer?.classList.contains('sd-webui-sm-modal-panel'));
+        const isCollapsed = !isModal && Boolean(sm.uiSettings.collapseSmallViewAccordion);
         const showSettings = sm.activePanelTab == 'settings';
 
         if(sm.sidePanel){
@@ -451,6 +587,9 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             toggleButton.setAttribute('aria-expanded', `${!isCollapsed}`);
             toggleButton.dataset['collapsed'] = `${isCollapsed}`;
         }
+
+        sm.renderQuickConfigMenu?.();
+        sm.syncQuickConfigApplyButtonState?.();
     }
 
     sm.canProceedWithApplyAction = function(): boolean{
@@ -945,6 +1084,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         const quickSettingSaveButton = <HTMLButtonElement>sm.createElementWithInnerTextAndClassList('button', defaultQuickSettingSaveButtonText, 'sd-webui-sm-nav-save-button', 'sd-webui-sm-nav-save-current-config-button', 'lg', 'secondary', 'gradio-button', sm.svelteClasses.button);
         quickSettingSaveButton.id = 'sd-webui-sm-quicksettings-button-save';
         quickSettingSaveButton.title = "Save current UI settings as a config";
+        sm.quickSettingSaveButton = quickSettingSaveButton;
 
         const showQuickSettingSaveButtonResult = (success: boolean) => {
             quickSettingSaveButton.innerText = success ? 'Saved' : 'Save Failed';
@@ -1091,6 +1231,16 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         sm.panelTabButtons = panelTabButtons;
 
         navControlButtons = sm.createElementWithClassList('div', 'sd-webui-sm-control');
+        const quickConfigMenuContainer = sm.createElementWithClassList('div', 'sd-webui-sm-quick-config-menu');
+        sm.quickConfigMenuContainer = quickConfigMenuContainer;
+        navControlButtons.appendChild(quickConfigMenuContainer);
+
+        const quickConfigApplyButton = <HTMLButtonElement>sm.createElementWithInnerTextAndClassList('button', 'Apply Config', 'sd-webui-sm-nav-save-button', 'sd-webui-sm-nav-apply-config-button', 'lg', 'secondary', 'gradio-button', sm.svelteClasses.button);
+        quickConfigApplyButton.disabled = true;
+        quickConfigApplyButton.classList.add('sd-webui-sm-hidden');
+        quickConfigApplyButton.addEventListener('click', () => sm.applyQuickSelectedConfig?.());
+        sm.quickConfigApplyButton = quickConfigApplyButton;
+        navControlButtons.appendChild(quickConfigApplyButton);
         
         navControlButtons.appendChild(quickSettingSaveButton);
 
@@ -1111,6 +1261,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         });
 
         navButtonSmallViewAccordion.addEventListener('click', () => {
+            if(sm.panelContainer.classList.contains('sd-webui-sm-modal-panel')){
+                return;
+            }
+
             sm.uiSettings.collapseSmallViewAccordion = !Boolean(sm.uiSettings.collapseSmallViewAccordion);
             sm.saveUISettings();
             sm.syncSmallViewAccordionState?.();
@@ -1935,6 +2089,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             sm.queueEntriesUpdate(0);
         }
 
+        sm.syncSmallViewAccordionState?.();
+        sm.syncModalQuickControlsState?.();
+        sm.syncQuickConfigApplyButtonState?.();
+
         const contain = app.querySelector('.contain');
 
         if(isModal){
@@ -2148,6 +2306,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         }
 
         sm.selection.entries = <Entry[]>Array.from(entries.childNodes).filter((entry: Entry) => entry.style.display != 'none' && entry.classList.contains('active'));
+        sm.renderQuickConfigMenu?.();
     }
 
     sm.updateEntryIndicators = function(entry){
@@ -2206,14 +2365,14 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         const unsaveButton = sm.createElementWithInnerTextAndClassList('button', '−', 'sd-webui-sm-inspector-unsave-button');
         const deleteButton = sm.createElementWithInnerTextAndClassList('button', '🗑', 'sd-webui-sm-inspector-delete-button');
         const saveChangesButton = <HTMLButtonElement>sm.createElementWithInnerTextAndClassList('button', 'Save Changes', 'sd-webui-sm-inspector-save-button', 'sd-webui-sm-inspector-load-button');
-        const loadAllButton = sm.createElementWithInnerTextAndClassList('button', 'Apply Selected', 'sd-webui-sm-inspector-load-all-button', 'sd-webui-sm-inspector-load-button');
+        const loadAllButton = sm.createElementWithInnerTextAndClassList('button', 'Apply Config', 'sd-webui-sm-inspector-load-all-button', 'sd-webui-sm-inspector-load-button');
         const canSaveConfigChanges = activeDraft.originalIsFavourite || sm.entryFilter.group == 'favourites';
 
         favButton.title = "Save as config";
         unsaveButton.title = "Remove from saved configs";
         deleteButton.title = "Delete this entry (warning: this cannot be undone)";
         saveChangesButton.title = canSaveConfigChanges ? "Save edited config settings" : "Save Changes is only available for saved configs";
-        loadAllButton.title = "Apply selected settings to the current UI";
+        loadAllButton.title = "Apply config settings to the current UI";
 
         const syncConfigActionButtons = () => {
             const trimmedName = `${activeDraft.name ?? ''}`.trim();
@@ -2329,9 +2488,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
                 return;
             }
 
-            for(const param of sm.inspector.querySelectorAll('.sd-webui-sm-inspector-param:has(:checked)')){
-                param.apply?.();
-            }
+            sm.applyAll(entry.data);
         });
 
         sm.inspector.appendChild(metaContainer);

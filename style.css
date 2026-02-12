@@ -186,6 +186,7 @@
 }
 
 .sd-webui-sm-modal-panel .sd-webui-sm-inspector-mode,
+.sd-webui-sm-modal-panel .sd-webui-sm-nav-apply-config-button,
 .sd-webui-sm-modal-panel .sd-webui-sm-nav-save-button,
 .sd-webui-sm-modal-panel .sd-webui-sm-quicksetting {
     display: none;
@@ -255,13 +256,53 @@ body.sd-webui-sm-modal-open {
     padding-right: 0;
 }
 
-.sd-webui-sm-control button:not(.sd-webui-sm-nav-save-current-config-button) {
+.sd-webui-sm-quick-config-menu {
+    display: none;
+    align-items: center;
+    gap: 4px;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-right: auto;
+    overflow: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.sd-webui-sm-quick-config-menu::-webkit-scrollbar {
+    display: none;
+}
+
+.sd-webui-sm-quick-config-item {
+    width: 2rem !important;
+    min-width: 2rem !important;
+    height: 2rem;
+    padding: 0;
+    border-radius: var(--input-radius);
+    border: 1px solid var(--border-color-primary) !important;
+    background-color: var(--input-background-fill) !important;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    cursor: pointer;
+}
+
+.sd-webui-sm-quick-config-item:hover {
+    border-color: var(--button-secondary-border-color-hover) !important;
+}
+
+.sd-webui-sm-quick-config-item.active {
+    border-color: var(--primary-400) !important;
+    box-shadow: 0 0 0 1px var(--primary-400);
+}
+
+.sd-webui-sm-control button:not(.sd-webui-sm-nav-save-current-config-button):not(.sd-webui-sm-nav-apply-config-button) {
     width: 2rem;
     aspect-ratio: 1;
     font-size: 1.1rem;
 }
 
-.sd-webui-sm-control .sd-webui-sm-nav-save-current-config-button {
+.sd-webui-sm-control .sd-webui-sm-nav-save-current-config-button,
+.sd-webui-sm-control .sd-webui-sm-nav-apply-config-button {
     width: 9rem;
     min-width: 9rem;
     max-width: none !important;
@@ -283,7 +324,16 @@ body.sd-webui-sm-modal-open {
     color: #fff !important;
 }
 
-.sd-webui-sm-panel-container:not(.sd-webui-sm-modal-panel) .sd-webui-sm-control .sd-webui-sm-nav-save-current-config-button {
+.sd-webui-sm-control .sd-webui-sm-nav-apply-config-button {
+    width: 6.75rem;
+    min-width: 6.75rem;
+    background: var(--button-secondary-background-fill) !important;
+    border-color: var(--button-secondary-border-color) !important;
+    color: var(--button-secondary-text-color) !important;
+}
+
+.sd-webui-sm-panel-container:not(.sd-webui-sm-modal-panel) .sd-webui-sm-control .sd-webui-sm-nav-save-current-config-button,
+.sd-webui-sm-panel-container:not(.sd-webui-sm-modal-panel) .sd-webui-sm-control .sd-webui-sm-nav-apply-config-button {
     position: static;
     top: auto;
     right: auto;
@@ -298,6 +348,20 @@ body.sd-webui-sm-modal-open {
 .sd-webui-sm-control .sd-webui-sm-nav-save-current-config-button:hover {
     background: #1d4ed8 !important;
     border-color: #1d4ed8 !important;
+}
+
+.sd-webui-sm-control .sd-webui-sm-nav-apply-config-button:hover {
+    background: var(--button-secondary-background-fill-hover) !important;
+    border-color: var(--button-secondary-border-color-hover) !important;
+}
+
+.sd-webui-sm-control .sd-webui-sm-nav-apply-config-button[disabled] {
+    opacity: .5;
+    cursor: not-allowed;
+}
+
+.sd-webui-sm-hidden {
+    display: none !important;
 }
 
 .sd-webui-sm-pill-toggle {
