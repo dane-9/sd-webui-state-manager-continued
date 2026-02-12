@@ -243,6 +243,8 @@ body.sd-webui-sm-modal-open {
     position: absolute;
     top: 0;
     right: 0;
+    z-index: 3;
+    pointer-events: none;
 }
 
 .sd-webui-sm-panel-container:not(.sd-webui-sm-modal-panel) .sd-webui-sm-control {
@@ -254,6 +256,14 @@ body.sd-webui-sm-modal-open {
     justify-content: flex-end;
     gap: 4px;
     padding-right: 0;
+}
+
+.sd-webui-sm-control button {
+    pointer-events: auto;
+}
+
+.sd-webui-sm-control .sd-webui-sm-quick-config-menu {
+    pointer-events: none;
 }
 
 .sd-webui-sm-quick-config-menu {
