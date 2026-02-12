@@ -817,6 +817,23 @@ body.sd-webui-sm-modal-open {
     color: var(--body-text-color);
 }
 
+.sd-webui-sm-settings-small-view-entries-group {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+}
+
+.sd-webui-sm-settings-small-view-entries-label {
+    font-size: 0.85em;
+    opacity: 0.85;
+}
+
+.sd-webui-sm-settings-row input.sd-webui-sm-settings-small-view-entries-input {
+    width: 68px;
+}
+
 .sd-webui-sm-entry-header input, .sd-webui-sm-entry-footer input {
 }
 

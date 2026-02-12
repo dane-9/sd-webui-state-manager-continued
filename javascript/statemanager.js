@@ -29,7 +29,8 @@
     sm.lastUsedState = null;
     sm.activePanelTab = 'history';
     sm.uiSettings = {
-        smallViewEntriesPerPage: entriesPerPage,
+        historySmallViewEntriesPerPage: entriesPerPage,
+        favouritesSmallViewEntriesPerPage: entriesPerPage,
         showSmallViewPagination: false,
         showEntryFooter: false,
         dateFormat: 'ddmmyyyy',
@@ -74,7 +75,8 @@
     };
     sm.getNormalisedUISettings = function (settings) {
         const normalised = {
-            smallViewEntriesPerPage: entriesPerPage,
+            historySmallViewEntriesPerPage: entriesPerPage,
+            favouritesSmallViewEntriesPerPage: entriesPerPage,
             showSmallViewPagination: false,
             showEntryFooter: false,
             dateFormat: 'ddmmyyyy',
@@ -91,7 +93,9 @@
         if (!settings || typeof settings !== 'object') {
             return normalised;
         }
-        normalised.smallViewEntriesPerPage = Math.max(1, Number.parseInt(`${settings.smallViewEntriesPerPage ?? ''}`) || entriesPerPage);
+        const legacySmallViewEntriesPerPage = Math.max(1, Number.parseInt(`${settings.smallViewEntriesPerPage ?? ''}`) || entriesPerPage);
+        normalised.historySmallViewEntriesPerPage = Math.max(1, Number.parseInt(`${settings.historySmallViewEntriesPerPage ?? ''}`) || legacySmallViewEntriesPerPage);
+        normalised.favouritesSmallViewEntriesPerPage = Math.max(1, Number.parseInt(`${settings.favouritesSmallViewEntriesPerPage ?? ''}`) || legacySmallViewEntriesPerPage);
         normalised.showSmallViewPagination = Boolean(settings.showSmallViewPagination);
         normalised.showEntryFooter = Boolean(settings.showEntryFooter);
         normalised.dateFormat = sm.getNormalisedDateFormatValue(settings.dateFormat);
@@ -150,7 +154,8 @@
         if (!sm.panelContainer) {
             return;
         }
-        const smallViewEntriesInput = sm.panelContainer.querySelector('#sd-webui-sm-settings-small-view-entries');
+        const historySmallViewEntriesInput = sm.panelContainer.querySelector('#sd-webui-sm-settings-small-view-entries-history');
+        const favouritesSmallViewEntriesInput = sm.panelContainer.querySelector('#sd-webui-sm-settings-small-view-entries-favourites');
         const showSmallViewPaginationCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-show-small-view-pagination');
         const showEntryFooterCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-show-entry-footer');
         const dateFormatSelect = sm.panelContainer.querySelector('#sd-webui-sm-settings-date-format');
@@ -163,8 +168,11 @@
         const defaultOpenTabSelect = sm.panelContainer.querySelector('#sd-webui-sm-settings-default-open-tab');
         const hideSearchByDefaultCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-hide-search');
         const preventApplyWithUnsavedEditsCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-prevent-apply-unsaved-edits');
-        if (smallViewEntriesInput) {
-            smallViewEntriesInput.value = `${Math.max(1, Number(sm.uiSettings.smallViewEntriesPerPage) || entriesPerPage)}`;
+        if (historySmallViewEntriesInput) {
+            historySmallViewEntriesInput.value = `${Math.max(1, Number(sm.uiSettings.historySmallViewEntriesPerPage) || entriesPerPage)}`;
+        }
+        if (favouritesSmallViewEntriesInput) {
+            favouritesSmallViewEntriesInput.value = `${Math.max(1, Number(sm.uiSettings.favouritesSmallViewEntriesPerPage) || entriesPerPage)}`;
         }
         if (showSmallViewPaginationCheckbox) {
             showSmallViewPaginationCheckbox.checked = Boolean(sm.uiSettings.showSmallViewPagination);
@@ -508,7 +516,10 @@
     };
     sm.getEntriesPerPage = function () {
         if (sm.isSmallViewMode()) {
-            return Math.max(1, Number.parseInt(`${sm.uiSettings.smallViewEntriesPerPage ?? ''}`) || entriesPerPage);
+            const entriesSetting = sm.entryFilter.group == 'favourites'
+                ? sm.uiSettings.favouritesSmallViewEntriesPerPage
+                : sm.uiSettings.historySmallViewEntriesPerPage;
+            return Math.max(1, Number.parseInt(`${entriesSetting ?? ''}`) || entriesPerPage);
         }
         return entriesPerPage;
     };
@@ -931,24 +942,45 @@
             sm.ldb.set('sd-webui-state-manager-autosave', sm.autoSaveHistory);
         });
         settingsList.appendChild(createSettingsRow('Auto-save History', 'Automatically save each generation to History.', settingsAutosave));
-        const settingsSmallViewEntries = document.createElement('input');
-        settingsSmallViewEntries.id = 'sd-webui-sm-settings-small-view-entries';
-        settingsSmallViewEntries.type = 'number';
-        settingsSmallViewEntries.min = '1';
-        settingsSmallViewEntries.max = '500';
-        settingsSmallViewEntries.step = '1';
-        settingsSmallViewEntries.addEventListener('change', () => {
-            const value = Math.max(1, Number.parseInt(settingsSmallViewEntries.value) || entriesPerPage);
-            settingsSmallViewEntries.value = `${value}`;
-            sm.uiSettings.smallViewEntriesPerPage = value;
+        const smallViewEntriesControlGroup = sm.createElementWithClassList('div', 'sd-webui-sm-settings-small-view-entries-group');
+        const historyEntriesLabel = sm.createElementWithInnerTextAndClassList('label', 'History', 'sd-webui-sm-settings-small-view-entries-label');
+        const configEntriesLabel = sm.createElementWithInnerTextAndClassList('label', 'Configs', 'sd-webui-sm-settings-small-view-entries-label');
+        const settingsHistorySmallViewEntries = document.createElement('input');
+        const settingsFavouritesSmallViewEntries = document.createElement('input');
+        settingsHistorySmallViewEntries.id = 'sd-webui-sm-settings-small-view-entries-history';
+        settingsFavouritesSmallViewEntries.id = 'sd-webui-sm-settings-small-view-entries-favourites';
+        for (const input of [settingsHistorySmallViewEntries, settingsFavouritesSmallViewEntries]) {
+            input.type = 'number';
+            input.min = '1';
+            input.max = '500';
+            input.step = '1';
+            input.classList.add('sd-webui-sm-settings-small-view-entries-input');
+        }
+        historyEntriesLabel.htmlFor = settingsHistorySmallViewEntries.id;
+        configEntriesLabel.htmlFor = settingsFavouritesSmallViewEntries.id;
+        const applySmallViewEntriesChange = (group, input) => {
+            const value = Math.max(1, Number.parseInt(input.value) || entriesPerPage);
+            input.value = `${value}`;
+            if (group == 'favourites') {
+                sm.uiSettings.favouritesSmallViewEntriesPerPage = value;
+            }
+            else {
+                sm.uiSettings.historySmallViewEntriesPerPage = value;
+            }
             sm.saveUISettings();
-            if (sm.isSmallViewMode() && !sm.uiSettings.showSmallViewPagination) {
+            if (sm.isSmallViewMode() && !sm.uiSettings.showSmallViewPagination && sm.entryFilter.group == group) {
                 sm.currentPage = 0;
                 sm.pageNumberInput.value = 1;
             }
             sm.queueEntriesUpdate(0);
-        });
-        settingsList.appendChild(createSettingsRow('Small View Entries', 'Number of entries shown in small view.', settingsSmallViewEntries));
+        };
+        settingsHistorySmallViewEntries.addEventListener('change', () => applySmallViewEntriesChange('history', settingsHistorySmallViewEntries));
+        settingsFavouritesSmallViewEntries.addEventListener('change', () => applySmallViewEntriesChange('favourites', settingsFavouritesSmallViewEntries));
+        smallViewEntriesControlGroup.appendChild(historyEntriesLabel);
+        smallViewEntriesControlGroup.appendChild(settingsHistorySmallViewEntries);
+        smallViewEntriesControlGroup.appendChild(configEntriesLabel);
+        smallViewEntriesControlGroup.appendChild(settingsFavouritesSmallViewEntries);
+        settingsList.appendChild(createSettingsRow('Small View Entries', 'Number of entries shown in small view for each tab.', smallViewEntriesControlGroup));
         const settingsShowSmallViewPagination = document.createElement('input');
         settingsShowSmallViewPagination.id = 'sd-webui-sm-settings-show-small-view-pagination';
         settingsShowSmallViewPagination.type = 'checkbox';
