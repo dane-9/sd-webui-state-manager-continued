@@ -31,6 +31,7 @@
         rememberFilters: false,
         defaultShowFavouritesInHistory: false,
         showConfigNamesOnCards: true,
+        alwaysShowConfigTypeBadge: false,
         showConfigsFirst: true,
         defaultOpenTab: 'favourites',
         hideSearchByDefault: false,
@@ -70,6 +71,7 @@
             rememberFilters: false,
             defaultShowFavouritesInHistory: false,
             showConfigNamesOnCards: true,
+            alwaysShowConfigTypeBadge: false,
             showConfigsFirst: true,
             defaultOpenTab: 'favourites',
             hideSearchByDefault: false,
@@ -84,6 +86,7 @@
         normalised.rememberFilters = Boolean(settings.rememberFilters);
         normalised.defaultShowFavouritesInHistory = Boolean(settings.defaultShowFavouritesInHistory);
         normalised.showConfigNamesOnCards = settings.hasOwnProperty('showConfigNamesOnCards') ? Boolean(settings.showConfigNamesOnCards) : true;
+        normalised.alwaysShowConfigTypeBadge = Boolean(settings.alwaysShowConfigTypeBadge);
         normalised.showConfigsFirst = Boolean(settings.showConfigsFirst);
         normalised.defaultOpenTab = sm.getNormalisedPanelTabValue(settings.defaultOpenTab);
         normalised.hideSearchByDefault = Boolean(settings.hideSearchByDefault);
@@ -140,6 +143,7 @@
         const rememberFiltersCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-remember-filters');
         const defaultShowFavouritesCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-default-show-favourites');
         const showConfigNamesCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-show-config-names');
+        const showConfigTypeBadgeCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-show-config-type-badge');
         const showConfigsFirstCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-show-configs-first');
         const defaultOpenTabSelect = sm.panelContainer.querySelector('#sd-webui-sm-settings-default-open-tab');
         const hideSearchByDefaultCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-hide-search');
@@ -161,6 +165,9 @@
         }
         if (showConfigNamesCheckbox) {
             showConfigNamesCheckbox.checked = Boolean(sm.uiSettings.showConfigNamesOnCards);
+        }
+        if (showConfigTypeBadgeCheckbox) {
+            showConfigTypeBadgeCheckbox.checked = Boolean(sm.uiSettings.alwaysShowConfigTypeBadge);
         }
         if (showConfigsFirstCheckbox) {
             showConfigsFirstCheckbox.checked = Boolean(sm.uiSettings.showConfigsFirst);
@@ -203,8 +210,16 @@
         if (!entryContainer) {
             return;
         }
-        const showConfigNames = Boolean(sm.uiSettings.showConfigNamesOnCards && sm.activePanelTab == 'favourites');
+        const showConfigNames = Boolean(sm.uiSettings.showConfigNamesOnCards && (sm.activePanelTab == 'favourites' || sm.activePanelTab == 'history'));
         entryContainer.dataset['showConfigNames'] = `${showConfigNames}`;
+    };
+    sm.syncConfigTypeBadgeVisibility = function () {
+        const entryContainer = sm.panelContainer?.querySelector('.sd-webui-sm-entry-container');
+        if (!entryContainer) {
+            return;
+        }
+        const showTypeBadge = Boolean(sm.uiSettings.alwaysShowConfigTypeBadge && (sm.activePanelTab == 'favourites' || sm.activePanelTab == 'history'));
+        entryContainer.dataset['showConfigTypeBadge'] = `${showTypeBadge}`;
     };
     sm.canProceedWithApplyAction = function () {
         if (!sm.uiSettings.preventApplyWithUnsavedConfigEdits) {
@@ -243,6 +258,7 @@
         sm.syncPanelTabVisibility?.();
         sm.syncSearchRowVisibility?.();
         sm.syncConfigCardNameVisibility?.();
+        sm.syncConfigTypeBadgeVisibility?.();
         sm.syncPaginationInteractionState?.();
         if (sm.panelContainer) {
             sm.queueEntriesUpdate(0);
@@ -906,7 +922,17 @@
             sm.saveUISettings();
             sm.syncConfigCardNameVisibility?.();
         });
-        settingsList.appendChild(createSettingsRow('Show Config Names on Cards', 'Display config names on cards in the Configs tab.', settingsShowConfigNames));
+        settingsList.appendChild(createSettingsRow('Show Config Names on Cards', 'Display config names on saved-config cards in Configs and History.', settingsShowConfigNames));
+        const settingsShowConfigTypeBadge = document.createElement('input');
+        settingsShowConfigTypeBadge.id = 'sd-webui-sm-settings-show-config-type-badge';
+        settingsShowConfigTypeBadge.type = 'checkbox';
+        settingsShowConfigTypeBadge.classList.add(sm.svelteClasses.checkbox);
+        settingsShowConfigTypeBadge.addEventListener('change', () => {
+            sm.uiSettings.alwaysShowConfigTypeBadge = settingsShowConfigTypeBadge.checked;
+            sm.saveUISettings();
+            sm.syncConfigTypeBadgeVisibility?.();
+        });
+        settingsList.appendChild(createSettingsRow('Always Show Config Type Badge', 'Always show txt2img/img2img type on config cards.', settingsShowConfigTypeBadge));
         const settingsShowConfigsFirst = document.createElement('input');
         settingsShowConfigsFirst.id = 'sd-webui-sm-settings-show-configs-first';
         settingsShowConfigsFirst.type = 'checkbox';
@@ -944,6 +970,7 @@
             settingsPanel.style.display = showSettings ? 'block' : 'none';
             updateShowSavedConfigsToggleVisibility();
             sm.syncConfigCardNameVisibility?.();
+            sm.syncConfigTypeBadgeVisibility?.();
         };
         sm.syncNavTabOrder();
         sm.syncPanelTabButtons();

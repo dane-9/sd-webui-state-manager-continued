@@ -439,13 +439,13 @@ body.sd-webui-sm-modal-open {
     right: 0;
     width: auto;
     z-index: 1;
-    padding: 2px 6px;
+    padding: 0px 3px;
     box-sizing: border-box;
     color: #fff;
     font-size: 1.1em;
     font-weight: 600;
     line-height: 1.2;
-    text-align: left;
+    text-align: center;
     white-space: normal;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -455,11 +455,28 @@ body.sd-webui-sm-modal-open {
     pointer-events: auto;
 }
 
-.sd-webui-sm-entry-container[data-show-config-names="true"] .sd-webui-sm-entry.has-config-name .config-name {
+.sd-webui-sm-entry-container[data-show-config-names="true"] .sd-webui-sm-entry.config.has-config-name .config-name {
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     max-height: 2.4em;
+}
+
+.sd-webui-sm-entry-container[data-show-config-type-badge="true"] .sd-webui-sm-entry.config:not(.active) .type {
+    display: block;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    border-radius: 0 0 3px 3px;
+    text-align: center;
+    padding: 3px 6px;
+    color: #fff !important;
+    text-shadow: 0 1px 2px #0008;
+    letter-spacing: unset;
+    background-color: #475569 !important;
+    opacity: .78;
 }
 
 .sd-webui-sm-entry .footer {
@@ -495,7 +512,7 @@ body.sd-webui-sm-modal-open {
     width: auto;
     border-radius: 0 0 3px 3px;
     text-align: center;
-    padding: 2px 6px;
+    padding: 3px 6px;
     letter-spacing: unset;
     background-color: var(--primary-300) !important;
     opacity: 1;
