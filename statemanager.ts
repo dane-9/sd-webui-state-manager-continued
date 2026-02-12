@@ -115,6 +115,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     const entryFilterStorageKey = 'sd-webui-state-manager-entry-filter';
     const validSorts = new Set(['newest', 'oldest', 'name', 'type']);
     const validPanelTabs = new Set(['history', 'favourites', 'settings']);
+    const validDateFormats = new Set(['ddmmyyyy', 'mmddyyyy']);
     
     let entryEventListenerAbortController = new AbortController();
     let updateEntriesDebounceHandle: number | null = null;
@@ -128,6 +129,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         smallViewEntriesPerPage: entriesPerPage,
         showSmallViewPagination: false,
         showEntryFooter: false,
+        dateFormat: 'ddmmyyyy',
         defaultSort: 'newest',
         rememberFilters: false,
         defaultShowFavouritesInHistory: false,
@@ -162,6 +164,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         return validPanelTabs.has(`${value}`) ? `${value}` : 'favourites';
     }
 
+    sm.getNormalisedDateFormatValue = function(value: any): string{
+        return validDateFormats.has(`${value}`) ? `${value}` : 'ddmmyyyy';
+    }
+
     sm.getDefaultEntryFilter = function(){
         return {
             group: 'history',
@@ -177,6 +183,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             smallViewEntriesPerPage: entriesPerPage,
             showSmallViewPagination: false,
             showEntryFooter: false,
+            dateFormat: 'ddmmyyyy',
             defaultSort: 'newest',
             rememberFilters: false,
             defaultShowFavouritesInHistory: false,
@@ -195,6 +202,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         normalised.smallViewEntriesPerPage = Math.max(1, Number.parseInt(`${settings.smallViewEntriesPerPage ?? ''}`) || entriesPerPage);
         normalised.showSmallViewPagination = Boolean(settings.showSmallViewPagination);
         normalised.showEntryFooter = Boolean(settings.showEntryFooter);
+        normalised.dateFormat = sm.getNormalisedDateFormatValue(settings.dateFormat);
         normalised.defaultSort = sm.getNormalisedSortValue(settings.defaultSort);
         normalised.rememberFilters = Boolean(settings.rememberFilters);
         normalised.defaultShowFavouritesInHistory = Boolean(settings.defaultShowFavouritesInHistory);
@@ -266,6 +274,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         const smallViewEntriesInput = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-small-view-entries');
         const showSmallViewPaginationCheckbox = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-show-small-view-pagination');
         const showEntryFooterCheckbox = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-show-entry-footer');
+        const dateFormatSelect = <HTMLSelectElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-date-format');
         const defaultSortSelect = <HTMLSelectElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-default-sort');
         const rememberFiltersCheckbox = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-remember-filters');
         const defaultShowFavouritesCheckbox = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-default-show-favourites');
@@ -286,6 +295,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
         if(showEntryFooterCheckbox){
             showEntryFooterCheckbox.checked = Boolean(sm.uiSettings.showEntryFooter);
+        }
+
+        if(dateFormatSelect){
+            dateFormatSelect.value = sm.getNormalisedDateFormatValue(sm.uiSettings.dateFormat);
         }
 
         if(defaultSortSelect){
@@ -1181,6 +1194,21 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         });
         settingsList.appendChild(createSettingsRow('Display Creation Time in Entries', 'Show date/time footer on entry cards.', settingsShowEntryFooter));
 
+        const settingsDateFormat = document.createElement('select');
+        settingsDateFormat.id = 'sd-webui-sm-settings-date-format';
+        settingsDateFormat.classList.add('sd-webui-sm-sort');
+        settingsDateFormat.innerHTML = `
+            <option value="ddmmyyyy">DD/MM/YYYY</option>
+            <option value="mmddyyyy">MM/DD/YYYY</option>
+        `;
+        settingsDateFormat.addEventListener('change', () => {
+            sm.uiSettings.dateFormat = sm.getNormalisedDateFormatValue(settingsDateFormat.value);
+            settingsDateFormat.value = sm.uiSettings.dateFormat;
+            sm.saveUISettings();
+            sm.queueEntriesUpdate(0);
+        });
+        settingsList.appendChild(createSettingsRow('Date Format', 'Date format used in entry card timestamps.', settingsDateFormat));
+
         const settingsDefaultSort = document.createElement('select');
         settingsDefaultSort.id = 'sd-webui-sm-settings-default-sort';
         settingsDefaultSort.classList.add('sd-webui-sm-sort');
@@ -1712,7 +1740,9 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             const hours = creationDate.getHours().toString().padStart(2, '0');
             const minutes = creationDate.getMinutes().toString().padStart(2, '0');
             const seconds = creationDate.getSeconds().toString().padStart(2, '0');
-            const fullDateText = `${day}/${month}/${year}`;
+            const fullDateText = sm.getNormalisedDateFormatValue(sm.uiSettings.dateFormat) == 'mmddyyyy'
+                ? `${month}/${day}/${year}`
+                : `${day}/${month}/${year}`;
             const fullTimeText = `${hours}:${minutes}:${seconds}`;
             const fullTimestamp = `${fullDateText} ${fullTimeText}`;
             const dateElement = <HTMLElement>entry.querySelector('.date');

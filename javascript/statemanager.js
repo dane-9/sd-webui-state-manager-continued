@@ -17,6 +17,7 @@
     const entryFilterStorageKey = 'sd-webui-state-manager-entry-filter';
     const validSorts = new Set(['newest', 'oldest', 'name', 'type']);
     const validPanelTabs = new Set(['history', 'favourites', 'settings']);
+    const validDateFormats = new Set(['ddmmyyyy', 'mmddyyyy']);
     let entryEventListenerAbortController = new AbortController();
     let updateEntriesDebounceHandle = null;
     let updateStorageDebounceHandle = null;
@@ -28,6 +29,7 @@
         smallViewEntriesPerPage: entriesPerPage,
         showSmallViewPagination: false,
         showEntryFooter: false,
+        dateFormat: 'ddmmyyyy',
         defaultSort: 'newest',
         rememberFilters: false,
         defaultShowFavouritesInHistory: false,
@@ -55,6 +57,9 @@
     sm.getNormalisedPanelTabValue = function (value) {
         return validPanelTabs.has(`${value}`) ? `${value}` : 'favourites';
     };
+    sm.getNormalisedDateFormatValue = function (value) {
+        return validDateFormats.has(`${value}`) ? `${value}` : 'ddmmyyyy';
+    };
     sm.getDefaultEntryFilter = function () {
         return {
             group: 'history',
@@ -69,6 +74,7 @@
             smallViewEntriesPerPage: entriesPerPage,
             showSmallViewPagination: false,
             showEntryFooter: false,
+            dateFormat: 'ddmmyyyy',
             defaultSort: 'newest',
             rememberFilters: false,
             defaultShowFavouritesInHistory: false,
@@ -85,6 +91,7 @@
         normalised.smallViewEntriesPerPage = Math.max(1, Number.parseInt(`${settings.smallViewEntriesPerPage ?? ''}`) || entriesPerPage);
         normalised.showSmallViewPagination = Boolean(settings.showSmallViewPagination);
         normalised.showEntryFooter = Boolean(settings.showEntryFooter);
+        normalised.dateFormat = sm.getNormalisedDateFormatValue(settings.dateFormat);
         normalised.defaultSort = sm.getNormalisedSortValue(settings.defaultSort);
         normalised.rememberFilters = Boolean(settings.rememberFilters);
         normalised.defaultShowFavouritesInHistory = Boolean(settings.defaultShowFavouritesInHistory);
@@ -143,6 +150,7 @@
         const smallViewEntriesInput = sm.panelContainer.querySelector('#sd-webui-sm-settings-small-view-entries');
         const showSmallViewPaginationCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-show-small-view-pagination');
         const showEntryFooterCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-show-entry-footer');
+        const dateFormatSelect = sm.panelContainer.querySelector('#sd-webui-sm-settings-date-format');
         const defaultSortSelect = sm.panelContainer.querySelector('#sd-webui-sm-settings-default-sort');
         const rememberFiltersCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-remember-filters');
         const defaultShowFavouritesCheckbox = sm.panelContainer.querySelector('#sd-webui-sm-settings-default-show-favourites');
@@ -160,6 +168,9 @@
         }
         if (showEntryFooterCheckbox) {
             showEntryFooterCheckbox.checked = Boolean(sm.uiSettings.showEntryFooter);
+        }
+        if (dateFormatSelect) {
+            dateFormatSelect.value = sm.getNormalisedDateFormatValue(sm.uiSettings.dateFormat);
         }
         if (defaultSortSelect) {
             defaultSortSelect.value = sm.getNormalisedSortValue(sm.uiSettings.defaultSort);
@@ -869,6 +880,20 @@
             sm.syncEntryFooterVisibility?.();
         });
         settingsList.appendChild(createSettingsRow('Display Creation Time in Entries', 'Show date/time footer on entry cards.', settingsShowEntryFooter));
+        const settingsDateFormat = document.createElement('select');
+        settingsDateFormat.id = 'sd-webui-sm-settings-date-format';
+        settingsDateFormat.classList.add('sd-webui-sm-sort');
+        settingsDateFormat.innerHTML = `
+            <option value="ddmmyyyy">DD/MM/YYYY</option>
+            <option value="mmddyyyy">MM/DD/YYYY</option>
+        `;
+        settingsDateFormat.addEventListener('change', () => {
+            sm.uiSettings.dateFormat = sm.getNormalisedDateFormatValue(settingsDateFormat.value);
+            settingsDateFormat.value = sm.uiSettings.dateFormat;
+            sm.saveUISettings();
+            sm.queueEntriesUpdate(0);
+        });
+        settingsList.appendChild(createSettingsRow('Date Format', 'Date format used in entry card timestamps.', settingsDateFormat));
         const settingsDefaultSort = document.createElement('select');
         settingsDefaultSort.id = 'sd-webui-sm-settings-default-sort';
         settingsDefaultSort.classList.add('sd-webui-sm-sort');
@@ -1293,7 +1318,9 @@
             const hours = creationDate.getHours().toString().padStart(2, '0');
             const minutes = creationDate.getMinutes().toString().padStart(2, '0');
             const seconds = creationDate.getSeconds().toString().padStart(2, '0');
-            const fullDateText = `${day}/${month}/${year}`;
+            const fullDateText = sm.getNormalisedDateFormatValue(sm.uiSettings.dateFormat) == 'mmddyyyy'
+                ? `${month}/${day}/${year}`
+                : `${day}/${month}/${year}`;
             const fullTimeText = `${hours}:${minutes}:${seconds}`;
             const fullTimestamp = `${fullDateText} ${fullTimeText}`;
             const dateElement = entry.querySelector('.date');
