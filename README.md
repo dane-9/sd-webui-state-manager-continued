@@ -1,49 +1,44 @@
-<img src="https://github.com/SenshiSentou/sd-webui-state-manager/blob/V2.0-beta/toma-chan.png" width="300">
-
-<img src="https://github.com/SenshiSentou/sd-webui-state-manager/blob/main/preview-docked.png" width="400" />
-<img src="https://github.com/SenshiSentou/sd-webui-state-manager/blob/main/preview-modal.png" width="400" />
-
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/J3J81VHA2)
-
 # State Manager
+**State Manager (Continued) is a maintained fork of the original State Manager extension for AUTOMATIC1111 WebUIs.**
 
-After trying a number of history/ state management extensions, I found they all suffered from one of more of these problems:
+It lets you save and restore your full UI setup for `txt2img` and `img2img`, so you can jump back to a working configuration without rebuilding everything by hand.
 
-- Bad UI/UX
-- Not saving the entire state
-- Just plain not working
+If you've ever lost track of which model, sampler, or script settings you were using between runs — that's the problem this solves. Save your setup, browse your history, keep reusable configs, and bring back either the whole thing or just the parts you need.
 
-I tried to solve these issues by creating an extension that scrapes and restores the entire state as best as possible, including quicksettings (checkpoint, VAE, clip skip are common ones), generation settings (samples, size, seed, etc.), and script and accordion settings.
+<img width="270" alt="preview-modal" src="https://github.com/user-attachments/assets/eabca34a-0229-46ca-b544-ee9efe88d3b9" /> <img width="270" alt="preview-small" src="https://github.com/user-attachments/assets/e37a78f9-8517-4097-834f-731049236871" /> <img width="270" alt="preview-quick" src="https://github.com/user-attachments/assets/eff429c2-ec3e-4590-ba2e-6eb6d23cff45" />
 
-# Usage
+## Core Features
 
-This extension adds two buttons to the top of A1111. The first (⌛⚙) opens the state browser; here you can view and manage your generation history and configs. The browser opens as a side drawer by default, but can be opened as a full-screen modal window as well.
+- **Save and restore your full setup**  
+  Captures everything in your `txt2img`/`img2img` tab so you can get back to a known-good state in one click.
+- **History + Configs with flexible apply**  
+  Your generated states are kept in `History`, and you can save reusable presets to `Configs`. Apply a full config or just pick the parts you want.
+- **Manual config ordering**  
+  Adjust the order your saved configs show up in, the quick view will display the first 10 configs.
+- **Filtering and sorting**  
+  Search by key fields and change how things are sorted or grouped to find what you're looking for faster.
+- **Modal, small view, and quick menu**  
+  Modal view gives you a full workspace, small view keeps things compact alongside your tabs, and the quick menu provides fast one-click access to your configs.
+- **Startup Config**  
+  Pick a config to auto-apply when WebUI launches, or set it to `None` to start fresh.
+- **Settings and management**  
+  Tweak things like `Startup Config`, `Remember Last-Used Filters`, `Default Open Tab`, sort/display options, and safety checks. Manage entries with rename, save, copy, delete, and batch actions.
 
-Clicking on an entry will show its settings in the inspector, and you can apply settings to your current workspace per-setting or per-category using the designated buttons, or you can apply all of them by double-clicking the entry instead.
+## Usage
 
-You can also multi-select entries by holding `ctrl` or the meta key (`⌘` on MacOS), or range select by holding shift.
+State Manager adds a panel where you can browse your `History` and `Configs`, see what's saved in each one, and apply the full setup or just specific parts. You can save your current UI state as a named config, reorder your config list however you like, and use filters and sorting to find past generations quickly.
 
-By default auto-save is off. If you enable it, every time you generate an image in either txt2img or img2img the state is saved to the history, and a small 100x100 thumbnail is saved alongside it.
+The quick menu gives you fast access to your go-to configs. Need more room? Expand to the small view. You can also open the modal from either view for a full workspace. If you want WebUI to start pre-configured, set your preferred `Startup Config` in Settings (or `None` to skip it).
 
-If you'd rather save your entries manually, leave auto-save off and use the second button on the top (⌛💾) to save them as configs.
+## Installation
 
-# Installation
+1. Open AUTOMATIC1111 WebUI.
+2. Go to `Extensions > Install from URL`.
+3. Paste:
 
-Open your A1111 Web UI and go to `Extensions > Install from URL`. Paste in the link to this repo (`https://github.com/SenshiSentou/sd-webui-state-manager.git`), click `Install` and restart the web ui. Badabing badaboom, baby!
+```text
+https://github.com/dane-9/sd-webui-state-manager-continued
+```
 
-# Changelog
-
-<details>
-  <summary>Click to expand</summary>
-  
-  ## 2.0
-  - Completely overhauled the way settings are saved and loaded (much more robust now) **V2.0 is NOT backwards compatible with V1**
-  - Added settings panel (`Settings > State Manager`) that contains:
-    - Option to save entries in either a browser's Indexed DB, or a shared .txt file 
-    - Tools to migrate data between the different save locations
-  - Added API. Mostly meant for internal use, but also contains a `/version` endpoint and some other programmatic access. See `[a1111 ip]:[port]/docs`
-  - Made data store more efficiently
-  - Improved (error) logging
-  - Fixed "delete entry" button not working
-  - Ported the code to typescript
-</details>
+4. Click `Install`.
+5. Restart WebUI.
