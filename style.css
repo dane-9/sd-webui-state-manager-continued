@@ -958,6 +958,10 @@ body.sd-webui-sm-modal-open {
     color: var(--body-text-color);
 }
 
+.sd-webui-sm-settings-row #sd-webui-sm-settings-startup-config {
+    width: clamp(180px, 32vw, 260px);
+}
+
 .sd-webui-sm-settings-small-view-entries-group {
     display: inline-flex;
     align-items: center;

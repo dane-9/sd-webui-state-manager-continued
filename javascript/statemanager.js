@@ -28,6 +28,7 @@
     sm.lastHeadImage = null;
     sm.lastUsedState = null;
     sm.quickMenuSelectedStateKey = null;
+    sm.hasAppliedStartupConfig = false;
     sm.activePanelTab = 'history';
     sm.uiSettings = {
         historySmallViewEntriesPerPage: entriesPerPage,
@@ -44,7 +45,8 @@
         showConfigsFirst: true,
         defaultOpenTab: 'favourites',
         hideSearchByDefault: false,
-        preventApplyWithUnsavedConfigEdits: true
+        preventApplyWithUnsavedConfigEdits: true,
+        startupConfigStateKey: ''
     };
     sm.loadedEntryFilter = null;
     sm.ldb.get('sd-webui-state-manager-autosave', autosave => {
@@ -91,7 +93,8 @@
             showConfigsFirst: true,
             defaultOpenTab: 'favourites',
             hideSearchByDefault: false,
-            preventApplyWithUnsavedConfigEdits: true
+            preventApplyWithUnsavedConfigEdits: true,
+            startupConfigStateKey: ''
         };
         if (!settings || typeof settings !== 'object') {
             return normalised;
@@ -112,6 +115,7 @@
         normalised.defaultOpenTab = sm.getNormalisedPanelTabValue(settings.defaultOpenTab);
         normalised.hideSearchByDefault = Boolean(settings.hideSearchByDefault);
         normalised.preventApplyWithUnsavedConfigEdits = Boolean(settings.preventApplyWithUnsavedConfigEdits);
+        normalised.startupConfigStateKey = `${settings.startupConfigStateKey ?? ''}`;
         return normalised;
     };
     sm.getNormalisedStoredEntryFilter = function (filter) {
@@ -214,6 +218,7 @@
         if (preventApplyWithUnsavedEditsCheckbox) {
             preventApplyWithUnsavedEditsCheckbox.checked = Boolean(sm.uiSettings.preventApplyWithUnsavedConfigEdits);
         }
+        sm.syncStartupConfigSettingsControls?.();
     };
     sm.saveUISettings = function () {
         sm.ldb.set(uiSettingsStorageKey, sm.getNormalisedUISettings(sm.uiSettings));
@@ -230,6 +235,80 @@
             sort: sm.getNormalisedSortValue(sm.entryFilter.sort),
             showFavouritesInHistory: Boolean(sm.entryFilter.showFavouritesInHistory)
         });
+    };
+    sm.getSavedConfigsForStartupSelection = function () {
+        if (!sm.memoryStorage?.entries?.data) {
+            return [];
+        }
+        const orderedStateKeys = sm.ensureFavouritesOrder?.() || [];
+        const savedConfigs = [];
+        const seenStateKeys = new Set();
+        for (const stateKey of orderedStateKeys) {
+            const key = `${stateKey ?? ''}`;
+            if (key.length == 0 || seenStateKeys.has(key)) {
+                continue;
+            }
+            const state = sm.memoryStorage.entries.data[key];
+            if (!state || (state.groups?.indexOf('favourites') ?? -1) == -1) {
+                continue;
+            }
+            savedConfigs.push(state);
+            seenStateKeys.add(key);
+        }
+        for (const stateKey of Object.keys(sm.memoryStorage.entries.data)) {
+            const key = `${stateKey ?? ''}`;
+            if (key.length == 0 || seenStateKeys.has(key)) {
+                continue;
+            }
+            const state = sm.memoryStorage.entries.data[key];
+            if (!state || (state.groups?.indexOf('favourites') ?? -1) == -1) {
+                continue;
+            }
+            savedConfigs.push(state);
+            seenStateKeys.add(key);
+        }
+        return savedConfigs;
+    };
+    sm.syncStartupConfigSettingsControls = function () {
+        const startupConfigSelect = sm.panelContainer?.querySelector('#sd-webui-sm-settings-startup-config');
+        if (!startupConfigSelect) {
+            return;
+        }
+        const startupConfigStateKey = `${sm.uiSettings.startupConfigStateKey ?? ''}`;
+        const savedConfigs = sm.getSavedConfigsForStartupSelection?.() || [];
+        let hasSelectedConfig = false;
+        startupConfigSelect.innerHTML = '';
+        const noneOption = document.createElement('option');
+        noneOption.value = '';
+        noneOption.innerText = 'None';
+        startupConfigSelect.appendChild(noneOption);
+        for (const state of savedConfigs) {
+            const stateKey = `${state.createdAt ?? ''}`;
+            if (stateKey.length == 0) {
+                continue;
+            }
+            const name = `${state.name ?? ''}`.trim();
+            const fallbackDate = new Date(Number(state.createdAt ?? Date.now())).toISOString().replace('T', ' ').replace(/\.\d+Z/, '');
+            const option = document.createElement('option');
+            option.value = stateKey;
+            option.innerText = name.length > 0 ? name : `Config ${fallbackDate}`;
+            startupConfigSelect.appendChild(option);
+            if (stateKey == startupConfigStateKey) {
+                hasSelectedConfig = true;
+            }
+        }
+        if (startupConfigStateKey.length > 0 && !hasSelectedConfig) {
+            sm.uiSettings.startupConfigStateKey = '';
+            sm.saveUISettings();
+        }
+        startupConfigSelect.value = hasSelectedConfig ? startupConfigStateKey : '';
+        startupConfigSelect.disabled = savedConfigs.length == 0;
+        if (savedConfigs.length == 0) {
+            startupConfigSelect.title = 'Save at least one config to enable startup apply';
+        }
+        else {
+            startupConfigSelect.title = 'Select a config to apply on startup. Choose None to disable.';
+        }
     };
     sm.syncSearchRowVisibility = function () {
         const searchRow = sm.panelContainer?.querySelector('.sd-webui-sm-entry-toolbar-row.search-row');
@@ -1431,6 +1510,15 @@
             sm.ldb.set('sd-webui-state-manager-autosave', sm.autoSaveHistory);
         });
         settingsList.appendChild(createSettingsRow('Auto-save History', 'Automatically save each generation to History.', settingsAutosave));
+        const settingsStartupConfig = document.createElement('select');
+        settingsStartupConfig.id = 'sd-webui-sm-settings-startup-config';
+        settingsStartupConfig.classList.add('sd-webui-sm-sort');
+        settingsStartupConfig.addEventListener('change', () => {
+            sm.uiSettings.startupConfigStateKey = `${settingsStartupConfig.value ?? ''}`;
+            sm.saveUISettings();
+            sm.syncStartupConfigSettingsControls?.();
+        });
+        settingsList.appendChild(createSettingsRow('Startup Config', 'Config to apply automatically on startup. Select None to disable.', settingsStartupConfig));
         const smallViewEntriesControlGroup = sm.createElementWithClassList('div', 'sd-webui-sm-settings-small-view-entries-group');
         const historyEntriesLabel = sm.createElementWithInnerTextAndClassList('label', 'History', 'sd-webui-sm-settings-small-view-entries-label');
         const configEntriesLabel = sm.createElementWithInnerTextAndClassList('label', 'Configs', 'sd-webui-sm-settings-small-view-entries-label');
@@ -1986,6 +2074,7 @@
             sm.updateEntriesWhenStorageReady = true;
             return;
         }
+        sm.syncStartupConfigSettingsControls?.();
         sm.closeEntryGearMenu?.();
         // Clear old listeners
         entryEventListenerAbortController.abort();
@@ -3077,6 +3166,24 @@
         }
         sm.applyComponentSettings(mergedComponentSettings);
     };
+    sm.applyStartupConfigIfEnabled = function () {
+        if (sm.hasAppliedStartupConfig) {
+            return;
+        }
+        sm.hasAppliedStartupConfig = true;
+        const startupConfigStateKey = `${sm.uiSettings.startupConfigStateKey ?? ''}`;
+        if (startupConfigStateKey.length == 0) {
+            return;
+        }
+        const startupConfig = sm.memoryStorage?.entries?.data?.[startupConfigStateKey];
+        if (!startupConfig || (startupConfig.groups?.indexOf('favourites') ?? -1) == -1) {
+            sm.uiSettings.startupConfigStateKey = '';
+            sm.saveUISettings();
+            sm.syncStartupConfigSettingsControls?.();
+            return;
+        }
+        sm.applyAll(startupConfig);
+    };
     sm.getQuickSettings = async function () {
         return sm.api.get("quicksettings")
             .then(response => {
@@ -3404,6 +3511,7 @@
         await Promise.all([versionPromise, storagePromise]);
         sm.injectUI();
         await componentMapPromise;
+        sm.applyStartupConfigIfEnabled?.();
     };
     onUiLoaded(sm.init);
     onAfterUiUpdate(sm.checkHeadImage);
