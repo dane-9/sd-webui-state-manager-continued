@@ -16,7 +16,14 @@
 }
 
 #quicksettings {
-    width: calc(100vw - 20px);
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.contain > #quicksettings {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 /* SM components */
@@ -155,6 +162,7 @@
     /* z-index: 999; */
     /* transform-style: preserve-3d; */
     z-index: 2147483001;
+    box-sizing: border-box;
 }
 
 .sd-webui-sm-panel-container.sd-webui-sm-modal-panel .sd-webui-sm-side-panel {
@@ -207,6 +215,7 @@
     display: block;
     width: 100vw;
     height: 100vh;
+    box-sizing: border-box;
     z-index: 2147483000;
     isolation: isolate;
 }
