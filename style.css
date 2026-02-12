@@ -399,24 +399,67 @@ body.sd-webui-sm-modal-open {
 }
 
 .sd-webui-sm-entry.active {
-    box-shadow: inset 0 0 0 3px var(--primary-300);
+    box-shadow: none;
+}
+
+.sd-webui-sm-entry.active::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: 4;
+    border: 3px solid var(--primary-300);
+    border-radius: 3px;
+    box-sizing: border-box;
+    pointer-events: none;
 }
 
 .sd-webui-sm-entry .type {
     position: absolute;
     top: 1px;
     right: 1px;
-    border-radius: 999px;
+    z-index: 2;
+    border-radius: 4px;
+	min-height: 18px;
     background-color: #0000 !important;
     color: var(--color-accent-soft);
     font-size: 1em;
-    padding: 3px 6px;
+    padding: 3px 8x;
     width: 22px;
     white-space: nowrap;
     letter-spacing: 3px;
     opacity: .5;
     transition: width .15s, background-color .15s, opacity .15s;
     display: none;
+}
+
+.sd-webui-sm-entry .config-name {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: auto;
+    z-index: 1;
+    padding: 2px 6px;
+    box-sizing: border-box;
+    color: #fff;
+    font-size: 1.1em;
+    font-weight: 600;
+    line-height: 1.2;
+    text-align: left;
+    white-space: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-radius: 3px 3px 0 0;
+    background: linear-gradient(to bottom, #000d, #0000);
+    display: none;
+    pointer-events: auto;
+}
+
+.sd-webui-sm-entry-container[data-show-config-names="true"] .sd-webui-sm-entry.has-config-name .config-name {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    max-height: 2.4em;
 }
 
 .sd-webui-sm-entry .footer {
@@ -445,7 +488,14 @@ body.sd-webui-sm-modal-open {
 
 .sd-webui-sm-entry.active .type {
     display: block;
-    width: 55px;
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    border-radius: 0 0 3px 3px;
+    text-align: center;
+    padding: 2px 6px;
     letter-spacing: unset;
     background-color: var(--primary-300) !important;
     opacity: 1;
@@ -456,30 +506,19 @@ body.sd-webui-sm-modal-open {
     overflow: visible;
 } */
 
-.sd-webui-sm-entry.configured::before, .sd-webui-sm-entry.config::after {
+.sd-webui-sm-entry.configured::before {
     position: absolute;
-    width: 22px;
+    width: 14px;
     aspect-ratio: 1;
     filter: drop-shadow(2px 2px 4px black);
 }
 
 .sd-webui-sm-entry.configured::before {
     content: '⚙';
-    /* top: 2px; */
-    bottom: -4px;
-    left: 2px;
-    font-size: 2.3em;
-}
-
-.sd-webui-sm-entry.config::after {
-    content: '+';
-    right: 4px;
+    z-index: 3;
     bottom: 0;
-    color: white;
-    font-weight: 900;
-    font-size: 1.5em;
-    text-shadow: 0 0 4px #000;
-    opacity: .9;
+    left: 1px;
+    font-size: 14px;
 }
 
 .sd-webui-sm-entry-header {

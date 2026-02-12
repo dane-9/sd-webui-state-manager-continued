@@ -130,6 +130,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         defaultSort: 'newest',
         rememberFilters: false,
         defaultShowFavouritesInHistory: false,
+        showConfigNamesOnCards: true,
         showConfigsFirst: true,
         defaultOpenTab: 'favourites',
         hideSearchByDefault: false,
@@ -176,6 +177,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             defaultSort: 'newest',
             rememberFilters: false,
             defaultShowFavouritesInHistory: false,
+            showConfigNamesOnCards: true,
             showConfigsFirst: true,
             defaultOpenTab: 'favourites',
             hideSearchByDefault: false,
@@ -191,6 +193,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         normalised.defaultSort = sm.getNormalisedSortValue(settings.defaultSort);
         normalised.rememberFilters = Boolean(settings.rememberFilters);
         normalised.defaultShowFavouritesInHistory = Boolean(settings.defaultShowFavouritesInHistory);
+        normalised.showConfigNamesOnCards = settings.hasOwnProperty('showConfigNamesOnCards') ? Boolean(settings.showConfigNamesOnCards) : true;
         normalised.showConfigsFirst = Boolean(settings.showConfigsFirst);
         normalised.defaultOpenTab = sm.getNormalisedPanelTabValue(settings.defaultOpenTab);
         normalised.hideSearchByDefault = Boolean(settings.hideSearchByDefault);
@@ -259,6 +262,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         const defaultSortSelect = <HTMLSelectElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-default-sort');
         const rememberFiltersCheckbox = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-remember-filters');
         const defaultShowFavouritesCheckbox = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-default-show-favourites');
+        const showConfigNamesCheckbox = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-show-config-names');
         const showConfigsFirstCheckbox = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-show-configs-first');
         const defaultOpenTabSelect = <HTMLSelectElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-default-open-tab');
         const hideSearchByDefaultCheckbox = <HTMLInputElement | null>sm.panelContainer.querySelector('#sd-webui-sm-settings-hide-search');
@@ -282,6 +286,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
 
         if(defaultShowFavouritesCheckbox){
             defaultShowFavouritesCheckbox.checked = Boolean(sm.uiSettings.defaultShowFavouritesInHistory);
+        }
+
+        if(showConfigNamesCheckbox){
+            showConfigNamesCheckbox.checked = Boolean(sm.uiSettings.showConfigNamesOnCards);
         }
 
         if(showConfigsFirstCheckbox){
@@ -330,6 +338,17 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         searchRow.style.display = sm.uiSettings.hideSearchByDefault ? 'none' : '';
     }
 
+    sm.syncConfigCardNameVisibility = function(){
+        const entryContainer = <HTMLElement | null>sm.panelContainer?.querySelector('.sd-webui-sm-entry-container');
+
+        if(!entryContainer){
+            return;
+        }
+
+        const showConfigNames = Boolean(sm.uiSettings.showConfigNamesOnCards && sm.activePanelTab == 'favourites');
+        entryContainer.dataset['showConfigNames'] = `${showConfigNames}`;
+    }
+
     sm.canProceedWithApplyAction = function(): boolean{
         if(!sm.uiSettings.preventApplyWithUnsavedConfigEdits){
             return true;
@@ -375,6 +394,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         sm.syncPanelTabButtons?.();
         sm.syncPanelTabVisibility?.();
         sm.syncSearchRowVisibility?.();
+        sm.syncConfigCardNameVisibility?.();
         sm.syncPaginationInteractionState?.();
 
         if(sm.panelContainer){
@@ -1193,6 +1213,17 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         });
         settingsList.appendChild(createSettingsRow('Show Saved Configs In History By Default', 'Controls whether configs are shown in History by default.', settingsDefaultShowFavourites));
 
+        const settingsShowConfigNames = document.createElement('input');
+        settingsShowConfigNames.id = 'sd-webui-sm-settings-show-config-names';
+        settingsShowConfigNames.type = 'checkbox';
+        settingsShowConfigNames.classList.add(sm.svelteClasses.checkbox);
+        settingsShowConfigNames.addEventListener('change', () => {
+            sm.uiSettings.showConfigNamesOnCards = settingsShowConfigNames.checked;
+            sm.saveUISettings();
+            sm.syncConfigCardNameVisibility?.();
+        });
+        settingsList.appendChild(createSettingsRow('Show Config Names on Cards', 'Display config names on cards in the Configs tab.', settingsShowConfigNames));
+
         const settingsShowConfigsFirst = document.createElement('input');
         settingsShowConfigsFirst.id = 'sd-webui-sm-settings-show-configs-first';
         settingsShowConfigsFirst.type = 'checkbox';
@@ -1233,6 +1264,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             sm.inspector.style.display = showSettings ? 'none' : '';
             settingsPanel.style.display = showSettings ? 'block' : 'none';
             updateShowSavedConfigsToggleVisibility();
+            sm.syncConfigCardNameVisibility?.();
         }
 
         sm.syncNavTabOrder();
@@ -1243,6 +1275,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             entry.style.display = 'none';
 
             entry.appendChild(sm.createElementWithClassList('div', 'type'));
+            entry.appendChild(sm.createElementWithClassList('div', 'config-name'));
 
             const footer = sm.createElementWithClassList('div', 'footer');
             footer.appendChild(sm.createElementWithClassList('div', 'date'));
@@ -1611,8 +1644,12 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             entry.classList.toggle('active', sm.selection.selectedStateKeys.has(entryStateKey));
 
             const creationDate = new Date(data.createdAt);
+            const configName = `${data.name ?? ''}`.trim();
 
             entry.querySelector('.type').innerText = `${data.type == 'txt2img' ? '🖋' : '🖼️'} ${data.type}`;
+            entry.querySelector('.config-name').innerText = configName;
+            entry.querySelector('.config-name').title = configName;
+            entry.classList.toggle('has-config-name', configName.length > 0);
             entry.querySelector('.date').innerText = `${creationDate.getDate().toString().padStart(2, '0')}-${(creationDate.getMonth() + 1).toString().padStart(2, '0')}-${creationDate.getFullYear().toString().padStart(2, '0')}`;
             entry.querySelector('.time').innerText = `${creationDate.getHours().toString().padStart(2, '0')}:${creationDate.getMinutes().toString().padStart(2, '0')}:${creationDate.getSeconds().toString().padStart(2, '0')}`;
             
