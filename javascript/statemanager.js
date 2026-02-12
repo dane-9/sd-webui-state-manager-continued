@@ -10,6 +10,7 @@
     const app = gradioApp();
     const looselyEqualUIValues = new Set([null, undefined, "", "None"]);
     const entriesPerPage = 25;
+    const modalEntriesPerPage = 100;
     const initialEntrySlotCount = entriesPerPage;
     const previewImageMaxSize = 100;
     const updateEntriesDebounceMs = 150;
@@ -920,6 +921,9 @@
         sm.updateInspector();
     };
     sm.getEntriesPerPage = function () {
+        if (sm.getMode() == 'modal') {
+            return modalEntriesPerPage;
+        }
         if (sm.isSmallViewMode()) {
             const entriesSetting = sm.entryFilter.group == 'favourites'
                 ? sm.uiSettings.favouritesSmallViewEntriesPerPage
