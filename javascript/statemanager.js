@@ -31,6 +31,7 @@
     sm.uiSettings = {
         historySmallViewEntriesPerPage: entriesPerPage,
         favouritesSmallViewEntriesPerPage: entriesPerPage,
+        collapseSmallViewAccordion: false,
         showSmallViewPagination: false,
         showEntryFooter: false,
         dateFormat: 'ddmmyyyy',
@@ -77,6 +78,7 @@
         const normalised = {
             historySmallViewEntriesPerPage: entriesPerPage,
             favouritesSmallViewEntriesPerPage: entriesPerPage,
+            collapseSmallViewAccordion: false,
             showSmallViewPagination: false,
             showEntryFooter: false,
             dateFormat: 'ddmmyyyy',
@@ -96,6 +98,7 @@
         const legacySmallViewEntriesPerPage = Math.max(1, Number.parseInt(`${settings.smallViewEntriesPerPage ?? ''}`) || entriesPerPage);
         normalised.historySmallViewEntriesPerPage = Math.max(1, Number.parseInt(`${settings.historySmallViewEntriesPerPage ?? ''}`) || legacySmallViewEntriesPerPage);
         normalised.favouritesSmallViewEntriesPerPage = Math.max(1, Number.parseInt(`${settings.favouritesSmallViewEntriesPerPage ?? ''}`) || legacySmallViewEntriesPerPage);
+        normalised.collapseSmallViewAccordion = Boolean(settings.collapseSmallViewAccordion);
         normalised.showSmallViewPagination = Boolean(settings.showSmallViewPagination);
         normalised.showEntryFooter = Boolean(settings.showEntryFooter);
         normalised.dateFormat = sm.getNormalisedDateFormatValue(settings.dateFormat);
@@ -257,6 +260,37 @@
         const showTypeBadge = Boolean(sm.uiSettings.alwaysShowConfigTypeBadge && (sm.activePanelTab == 'favourites' || sm.activePanelTab == 'history'));
         entryContainer.dataset['showConfigTypeBadge'] = `${showTypeBadge}`;
     };
+    sm.syncSmallViewAccordionState = function () {
+        const entryContainer = sm.panelContainer?.querySelector('.sd-webui-sm-entry-container');
+        const inspector = sm.inspector || null;
+        const settingsPanel = sm.panelContainer?.querySelector('.sd-webui-sm-settings-panel');
+        const isCollapsed = Boolean(sm.uiSettings.collapseSmallViewAccordion);
+        const showSettings = sm.activePanelTab == 'settings';
+        if (sm.sidePanel) {
+            sm.sidePanel.classList.toggle('sd-webui-sm-small-view-collapsed', isCollapsed);
+        }
+        if (entryContainer) {
+            entryContainer.style.display = (showSettings || isCollapsed) ? 'none' : '';
+        }
+        if (inspector) {
+            inspector.style.display = (showSettings || isCollapsed) ? 'none' : '';
+        }
+        if (settingsPanel) {
+            settingsPanel.style.display = (!isCollapsed && showSettings) ? 'block' : 'none';
+        }
+        const panelTabButtons = sm.panelTabButtons || {};
+        for (const tabName in panelTabButtons) {
+            panelTabButtons[tabName].style.display = isCollapsed ? 'none' : '';
+        }
+        const toggleButton = (sm.smallViewAccordionToggleButton || null);
+        if (toggleButton) {
+            toggleButton.classList.toggle('open', !isCollapsed);
+            toggleButton.title = isCollapsed ? 'Expand small view' : 'Collapse small view';
+            toggleButton.setAttribute('aria-label', toggleButton.title);
+            toggleButton.setAttribute('aria-expanded', `${!isCollapsed}`);
+            toggleButton.dataset['collapsed'] = `${isCollapsed}`;
+        }
+    };
     sm.canProceedWithApplyAction = function () {
         if (!sm.uiSettings.preventApplyWithUnsavedConfigEdits) {
             return true;
@@ -296,6 +330,7 @@
         sm.syncEntryFooterVisibility?.();
         sm.syncConfigCardNameVisibility?.();
         sm.syncConfigTypeBadgeVisibility?.();
+        sm.syncSmallViewAccordionState?.();
         sm.syncPaginationInteractionState?.();
         if (sm.panelContainer) {
             sm.queueEntriesUpdate(0);
@@ -756,16 +791,28 @@
         createNavTab('History', 'history', 'history', true);
         createNavTab('Configs', 'favourites', 'favourites');
         createNavTab('Settings', 'settings', null);
+        sm.panelTabButtons = panelTabButtons;
         navControlButtons = sm.createElementWithClassList('div', 'sd-webui-sm-control');
         navControlButtons.appendChild(quickSettingSaveButton);
         const navButtonMode = sm.createElementWithClassList('button', 'sd-webui-sm-inspector-mode');
         navControlButtons.appendChild(navButtonMode);
+        const navButtonSmallViewAccordion = sm.createElementWithClassList('button', 'sd-webui-sm-small-view-accordion-toggle', 'gradio-accordion');
+        navButtonSmallViewAccordion.appendChild(sm.createElementWithInnerTextAndClassList('span', '▼', 'foldout'));
+        sm.smallViewAccordionToggleButton = navButtonSmallViewAccordion;
+        navControlButtons.appendChild(navButtonSmallViewAccordion);
         navButtonMode.addEventListener('click', () => {
             panel.classList.remove('sd-webui-sm-side-panel-folded');
             sm.panelContainer.classList.add('sd-webui-sm-modal-panel');
             sm.mountPanelContainer();
             sm.syncModalOverlayState();
             sm.updateInspector();
+        });
+        navButtonSmallViewAccordion.addEventListener('click', () => {
+            sm.uiSettings.collapseSmallViewAccordion = !Boolean(sm.uiSettings.collapseSmallViewAccordion);
+            sm.saveUISettings();
+            sm.syncSmallViewAccordionState?.();
+            sm.syncPaginationInteractionState?.();
+            sm.queueEntriesUpdate(0);
         });
         panel.addEventListener('click', e => e.stopPropagation());
         sm.panelContainer.addEventListener('click', () => {
@@ -1140,9 +1187,9 @@
         };
         sm.syncPanelTabVisibility = function () {
             const showSettings = sm.activePanelTab == 'settings';
-            entryContainer.style.display = showSettings ? 'none' : '';
             sm.inspector.style.display = showSettings ? 'none' : '';
             settingsPanel.style.display = showSettings ? 'block' : 'none';
+            sm.syncSmallViewAccordionState?.();
             updateShowSavedConfigsToggleVisibility();
             sm.syncConfigCardNameVisibility?.();
             sm.syncConfigTypeBadgeVisibility?.();

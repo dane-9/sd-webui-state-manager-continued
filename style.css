@@ -176,6 +176,15 @@
     flex-grow: 0;
 }
 
+.sd-webui-sm-modal-panel .sd-webui-sm-side-panel.sd-webui-sm-small-view-collapsed {
+    grid-template-columns: 1fr;
+}
+
+.sd-webui-sm-modal-panel .sd-webui-sm-side-panel.sd-webui-sm-small-view-collapsed .sd-webui-sm-inspector {
+    grid-column: 1;
+    padding-left: 0;
+}
+
 .sd-webui-sm-modal-panel .sd-webui-sm-inspector-mode,
 .sd-webui-sm-modal-panel .sd-webui-sm-nav-save-button,
 .sd-webui-sm-modal-panel .sd-webui-sm-quicksetting {
@@ -235,6 +244,17 @@ body.sd-webui-sm-modal-open {
     right: 0;
 }
 
+.sd-webui-sm-panel-container:not(.sd-webui-sm-modal-panel) .sd-webui-sm-control {
+    left: 6px;
+    right: 6px;
+    height: 2em;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 4px;
+    padding-right: 0;
+}
+
 .sd-webui-sm-control button:not(.sd-webui-sm-nav-save-current-config-button) {
     width: 2rem;
     aspect-ratio: 1;
@@ -261,6 +281,18 @@ body.sd-webui-sm-modal-open {
     background: #2563eb !important;
     border-color: #2563eb !important;
     color: #fff !important;
+}
+
+.sd-webui-sm-panel-container:not(.sd-webui-sm-modal-panel) .sd-webui-sm-control .sd-webui-sm-nav-save-current-config-button {
+    position: static;
+    top: auto;
+    right: auto;
+}
+
+.sd-webui-sm-panel-container:not(.sd-webui-sm-modal-panel) .sd-webui-sm-control .sd-webui-sm-nav-save-current-config-button,
+.sd-webui-sm-panel-container:not(.sd-webui-sm-modal-panel) .sd-webui-sm-control .sd-webui-sm-inspector-mode {
+    position: relative;
+    z-index: 2;
 }
 
 .sd-webui-sm-control .sd-webui-sm-nav-save-current-config-button:hover {
@@ -859,8 +891,7 @@ body.sd-webui-sm-resizing {
 }
 
 @media (max-width: 1024px) {
-    .sd-webui-sm-side-panel,
-    .sd-webui-sm-modal-panel .sd-webui-sm-side-panel {
+    .sd-webui-sm-side-panel {
         grid-template-columns: minmax(320px, 100%);
         grid-template-rows: 2.2em auto minmax(220px, 1fr);
         min-height: 660px;
@@ -1314,6 +1345,45 @@ body.sd-webui-sm-resizing {
 .sd-webui-sm-modal-panel .sd-webui-sm-inspector-mode {
     mask-image: url("resources/icon-dock-right.svg");
     -webkit-mask-image: url("resources/icon-dock-right.svg");
+}
+
+.sd-webui-sm-small-view-accordion-toggle {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 1px solid var(--border-color-primary) !important;
+    border-radius: var(--input-radius);
+    background: var(--input-background-fill) !important;
+    color: var(--body-text-color) !important;
+    cursor: pointer;
+}
+
+.sd-webui-sm-panel-container:not(.sd-webui-sm-modal-panel) .sd-webui-sm-small-view-accordion-toggle {
+    position: relative !important;
+    width: 2rem !important;
+    min-width: 2rem !important;
+    height: 2rem;
+    aspect-ratio: 1;
+    z-index: 2;
+}
+
+.sd-webui-sm-small-view-accordion-toggle:hover {
+    background: var(--background-fill-secondary) !important;
+}
+
+.sd-webui-sm-small-view-accordion-toggle .foldout {
+    display: inline-block;
+    line-height: 1;
+    transform: rotate(90deg);
+    transition: transform .15s;
+    pointer-events: none;
+}
+
+.sd-webui-sm-small-view-accordion-toggle.open .foldout {
+    transform: rotate(0deg);
 }
 
 .sd-webui-statemanager-option-button {
