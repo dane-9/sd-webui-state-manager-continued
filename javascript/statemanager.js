@@ -289,6 +289,63 @@
         applyButton.disabled = !hasSelection;
         applyButton.title = hasSelection ? 'Apply selected quick config' : 'Select a quick config first';
     };
+    sm.syncQuickConfigMenuSelectionState = function () {
+        const container = (sm.quickConfigMenuContainer || null);
+        if (!container) {
+            return;
+        }
+        const selectedStateKey = `${sm.quickMenuSelectedStateKey ?? ''}`;
+        const quickConfigButtons = container.querySelectorAll('.sd-webui-sm-quick-config-item');
+        for (const button of Array.from(quickConfigButtons)) {
+            button.classList.toggle('active', `${button.dataset['stateKey'] ?? ''}` == selectedStateKey);
+        }
+        sm.syncQuickConfigApplyButtonState?.();
+    };
+    sm.ensureQuickConfigHoverTooltip = function () {
+        let tooltip = (sm.quickConfigHoverTooltip || null);
+        if (!tooltip) {
+            tooltip = sm.createElementWithClassList('div', 'sd-webui-sm-quick-config-tooltip');
+            tooltip.setAttribute('role', 'tooltip');
+            tooltip.style.display = 'none';
+            document.body.appendChild(tooltip);
+            sm.quickConfigHoverTooltip = tooltip;
+        }
+        return tooltip;
+    };
+    sm.hideQuickConfigHoverTooltip = function () {
+        const tooltip = (sm.quickConfigHoverTooltip || null);
+        if (!tooltip) {
+            return;
+        }
+        tooltip.style.display = 'none';
+    };
+    sm.showQuickConfigHoverTooltip = function (label, anchorElement) {
+        const value = `${label ?? ''}`.trim();
+        if (value.length == 0) {
+            sm.hideQuickConfigHoverTooltip?.();
+            return;
+        }
+        if (!anchorElement || !anchorElement.isConnected) {
+            sm.hideQuickConfigHoverTooltip?.();
+            return;
+        }
+        const tooltip = sm.ensureQuickConfigHoverTooltip();
+        tooltip.textContent = value;
+        tooltip.style.display = 'block';
+        const viewportPadding = 4;
+        const offsetY = 6;
+        const anchorRect = anchorElement.getBoundingClientRect();
+        const tooltipRect = tooltip.getBoundingClientRect();
+        let left = anchorRect.left + ((anchorRect.width - tooltipRect.width) / 2);
+        let top = anchorRect.top - tooltipRect.height - offsetY;
+        if (top < viewportPadding) {
+            top = anchorRect.bottom + offsetY;
+        }
+        left = Math.max(viewportPadding, Math.min(left, window.innerWidth - tooltipRect.width - viewportPadding));
+        top = Math.max(viewportPadding, Math.min(top, window.innerHeight - tooltipRect.height - viewportPadding));
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+    };
     sm.syncModalQuickControlsState = function () {
         const isModal = Boolean(sm.panelContainer?.classList.contains('sd-webui-sm-modal-panel'));
         const quickSaveButton = (sm.quickSettingSaveButton || null);
@@ -304,6 +361,9 @@
         if (isModal && quickApplyButton) {
             quickApplyButton.classList.add('sd-webui-sm-hidden');
             quickApplyButton.disabled = true;
+        }
+        if (isModal) {
+            sm.hideQuickConfigHoverTooltip?.();
         }
         if (accordionToggleButton) {
             accordionToggleButton.classList.toggle('sd-webui-sm-hidden', isModal);
@@ -333,12 +393,17 @@
     };
     sm.renderQuickConfigMenu = function () {
         const container = (sm.quickConfigMenuContainer || null);
+        const navControlButtons = (container?.parentElement || null);
         if (!container) {
             return;
         }
         const showQuickMenu = Boolean(sm.uiSettings.collapseSmallViewAccordion && !sm.panelContainer?.classList.contains('sd-webui-sm-modal-panel'));
+        if (navControlButtons) {
+            navControlButtons.classList.toggle('sd-webui-sm-control-wide', showQuickMenu);
+        }
         container.style.display = showQuickMenu ? 'flex' : 'none';
         if (!showQuickMenu) {
+            sm.hideQuickConfigHoverTooltip?.();
             sm.syncQuickConfigApplyButtonState?.();
             return;
         }
@@ -353,17 +418,40 @@
             const stateKey = `${state.createdAt ?? ''}`;
             const name = `${state.name ?? ''}`.trim();
             const fallbackDate = new Date(Number(state.createdAt ?? Date.now())).toISOString().replace('T', ' ').replace(/\.\d+Z/, '');
+            button.type = 'button';
             button.title = name.length > 0 ? name : `Config ${fallbackDate}`;
             button.setAttribute('aria-label', button.title);
+            button.dataset['tooltip'] = button.title;
+            button.dataset['stateKey'] = stateKey;
             button.style.backgroundImage = state.preview ? `url("${state.preview}")` : '';
             button.classList.toggle('active', `${sm.quickMenuSelectedStateKey ?? ''}` == stateKey);
+            const selectQuickConfig = (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                sm.hideQuickConfigHoverTooltip?.();
+                sm.quickMenuSelectedStateKey = stateKey;
+                sm.syncQuickConfigMenuSelectionState?.();
+            };
+            const showQuickConfigTooltip = () => {
+                sm.showQuickConfigHoverTooltip?.(`${button.title ?? ''}`, button);
+            };
+            const hideQuickConfigTooltip = () => {
+                sm.hideQuickConfigHoverTooltip?.();
+            };
+            button.addEventListener('pointerdown', selectQuickConfig);
             button.addEventListener('click', (event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                sm.quickMenuSelectedStateKey = stateKey;
-                sm.syncQuickConfigApplyButtonState?.();
-                sm.renderQuickConfigMenu?.();
             });
+            button.addEventListener('keydown', (event) => {
+                if (event.key == 'Enter' || event.key == ' ') {
+                    selectQuickConfig(event);
+                }
+            });
+            button.addEventListener('mouseenter', showQuickConfigTooltip);
+            button.addEventListener('focus', showQuickConfigTooltip);
+            button.addEventListener('mouseleave', hideQuickConfigTooltip);
+            button.addEventListener('blur', hideQuickConfigTooltip);
             container.appendChild(button);
         }
         sm.syncQuickConfigApplyButtonState?.();

@@ -244,11 +244,10 @@ body.sd-webui-sm-modal-open {
     top: 0;
     right: 0;
     z-index: 3;
-    pointer-events: none;
 }
 
 .sd-webui-sm-panel-container:not(.sd-webui-sm-modal-panel) .sd-webui-sm-control {
-    left: 6px;
+    left: auto;
     right: 6px;
     height: 2em;
     display: flex;
@@ -258,12 +257,8 @@ body.sd-webui-sm-modal-open {
     padding-right: 0;
 }
 
-.sd-webui-sm-control button {
-    pointer-events: auto;
-}
-
-.sd-webui-sm-control .sd-webui-sm-quick-config-menu {
-    pointer-events: none;
+.sd-webui-sm-panel-container:not(.sd-webui-sm-modal-panel) .sd-webui-sm-control.sd-webui-sm-control-wide {
+    left: 6px;
 }
 
 .sd-webui-sm-quick-config-menu {
@@ -294,6 +289,7 @@ body.sd-webui-sm-modal-open {
     background-position: center;
     background-repeat: no-repeat;
     cursor: pointer;
+    position: relative;
 }
 
 .sd-webui-sm-quick-config-item:hover {
@@ -303,6 +299,22 @@ body.sd-webui-sm-modal-open {
 .sd-webui-sm-quick-config-item.active {
     border-color: var(--primary-400) !important;
     box-shadow: 0 0 0 1px var(--primary-400);
+}
+
+.sd-webui-sm-quick-config-tooltip {
+    position: fixed;
+    z-index: 2147483647;
+    max-width: min(320px, calc(100vw - 12px));
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    color: var(--body-text-color);
+    background: var(--body-background-fill);
+    border: 1px solid var(--border-color-primary);
+    box-shadow: 0 4px 16px #0004;
+    pointer-events: none;
 }
 
 .sd-webui-sm-control button:not(.sd-webui-sm-nav-save-current-config-button):not(.sd-webui-sm-nav-apply-config-button) {
