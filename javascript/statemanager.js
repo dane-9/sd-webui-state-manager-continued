@@ -496,7 +496,7 @@
             if (generationType != null) {
                 const currentState = await sm.getCurrentState(generationType);
                 currentState.name = "Saved UI " + new Date().toISOString().replace('T', ' ').replace(/\.\d+Z/, '');
-                currentState.preview = new Error().stack.match((/(http(.)+)\/javascript\/[a-zA-Z0-9]+\.js/))[1] + "/resources/icon-saved-ui.png";
+                currentState.preview = new Error().stack.match((/(http(.)+)\/javascript\/[a-zA-Z0-9]+\.js/))[1] + "/resources/icon-saved-ui.webp";
                 sm.saveState(currentState, 'favourites');
                 showQuickSettingSaveButtonResult(true);
                 sm.updateEntries();
