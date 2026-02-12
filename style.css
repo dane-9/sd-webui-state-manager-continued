@@ -739,6 +739,30 @@ body.sd-webui-sm-modal-open {
     color: var(--neutral-400);
 }
 
+.sd-webui-sm-reorder-container {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.sd-webui-sm-reorder-container .sd-webui-sm-reorder-button {
+    height: 1.8em;
+    padding: 0 8px;
+    font-size: 0.8em;
+    line-height: 1;
+}
+
+.sd-webui-sm-reorder-container .sd-webui-sm-reorder-button.active {
+    background: var(--button-secondary-background-fill-hover);
+    border-color: var(--button-secondary-border-color-hover);
+}
+
+.sd-webui-sm-reorder-container .sd-webui-sm-reorder-button[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .sd-webui-sm-sort-container .sd-webui-sm-sort {
     min-width: 110px;
     background: var(--input-background-fill);

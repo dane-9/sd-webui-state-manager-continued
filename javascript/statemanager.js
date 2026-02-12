@@ -17,7 +17,7 @@
     const uiSettingsStorageKey = 'sd-webui-state-manager-ui-settings';
     const entryFilterStorageKey = 'sd-webui-state-manager-entry-filter';
     const previewObserverRootMargin = '120px';
-    const validSorts = new Set(['newest', 'oldest', 'name', 'type']);
+    const validSorts = new Set(['newest', 'oldest', 'name', 'type', 'manual']);
     const validPanelTabs = new Set(['history', 'favourites', 'settings']);
     const validDateFormats = new Set(['ddmmyyyy', 'mmddyyyy']);
     const loadedPreviewUrls = new Set();
@@ -261,13 +261,93 @@
         const showTypeBadge = Boolean(sm.uiSettings.alwaysShowConfigTypeBadge && (sm.activePanelTab == 'favourites' || sm.activePanelTab == 'history'));
         entryContainer.dataset['showConfigTypeBadge'] = `${showTypeBadge}`;
     };
+    sm.getFavouritesStateKeysNewestFirst = function () {
+        if (!sm.memoryStorage?.entries?.data) {
+            return [];
+        }
+        return Object.keys(sm.memoryStorage.entries.data)
+            .filter(key => (sm.memoryStorage.entries.data[key]?.groups?.indexOf('favourites') ?? -1) > -1)
+            .sort((a, b) => (Number(sm.memoryStorage.entries.data[b]?.createdAt ?? b) || 0) - (Number(sm.memoryStorage.entries.data[a]?.createdAt ?? a) || 0));
+    };
+    sm.getNormalisedFavouritesOrder = function (order) {
+        const favouriteKeys = sm.getFavouritesStateKeysNewestFirst();
+        const favouriteKeySet = new Set(favouriteKeys);
+        const normalised = [];
+        if (Array.isArray(order)) {
+            for (const candidate of order) {
+                const key = `${candidate ?? ''}`;
+                if (key.length == 0 || !favouriteKeySet.has(key) || normalised.indexOf(key) > -1) {
+                    continue;
+                }
+                normalised.push(key);
+                favouriteKeySet.delete(key);
+            }
+        }
+        for (const key of favouriteKeys) {
+            if (favouriteKeySet.has(key)) {
+                normalised.push(key);
+            }
+        }
+        return normalised;
+    };
+    sm.ensureFavouritesOrder = function () {
+        if (!sm.memoryStorage) {
+            return [];
+        }
+        sm.memoryStorage.favouritesOrder = sm.getNormalisedFavouritesOrder(sm.memoryStorage.favouritesOrder);
+        return [...sm.memoryStorage.favouritesOrder];
+    };
+    sm.appendFavouritesOrderKey = function (stateKey) {
+        const key = `${stateKey ?? ''}`;
+        if (key.length == 0 || !sm.memoryStorage) {
+            return;
+        }
+        const currentOrder = sm.ensureFavouritesOrder();
+        if (currentOrder.indexOf(key) > -1) {
+            return;
+        }
+        currentOrder.push(key);
+        sm.memoryStorage.favouritesOrder = currentOrder;
+    };
+    sm.removeFavouritesOrderKey = function (stateKey) {
+        const key = `${stateKey ?? ''}`;
+        if (key.length == 0 || !sm.memoryStorage) {
+            return;
+        }
+        sm.memoryStorage.favouritesOrder = sm.ensureFavouritesOrder().filter((candidate) => candidate != key);
+    };
+    sm.getActiveFavouritesOrder = function () {
+        if (sm.configReorderState?.active) {
+            return sm.getNormalisedFavouritesOrder(sm.configReorderState.workingOrder);
+        }
+        return sm.ensureFavouritesOrder();
+    };
+    sm.getSelectedConfigStateKey = function () {
+        if (sm.selection.entries.length != 1) {
+            return null;
+        }
+        const selectedEntry = (sm.selection.entries[0] || null);
+        const selectedStateKey = `${selectedEntry?.data?.createdAt ?? ''}`;
+        if (selectedStateKey.length == 0) {
+            return null;
+        }
+        const selectedState = sm.memoryStorage?.entries?.data?.[selectedStateKey];
+        if (!selectedState || (selectedState.groups?.indexOf('favourites') ?? -1) == -1) {
+            return null;
+        }
+        return selectedStateKey;
+    };
+    sm.isConfigReorderModeActive = function () {
+        return Boolean(sm.configReorderState?.active);
+    };
     sm.getQuickConfigMenuStates = function () {
         if (!sm.memoryStorage?.entries?.data) {
             return [];
         }
-        return Object.values(sm.memoryStorage.entries.data)
-            .filter((state) => (state.groups?.indexOf('favourites') ?? -1) > -1)
-            .sort((a, b) => (Number(b.createdAt ?? 0) || 0) - (Number(a.createdAt ?? 0) || 0))
+        const orderedStateKeys = sm.getActiveFavouritesOrder?.() || sm.ensureFavouritesOrder?.() || [];
+        return orderedStateKeys
+            .map((stateKey) => sm.memoryStorage.entries.data[stateKey])
+            .filter((state) => Boolean(state))
             .slice(0, 10);
     };
     sm.syncQuickConfigApplyButtonState = function () {
@@ -712,6 +792,9 @@
         }
         sm.memoryStorage.entries.data[stateClone.createdAt] = stateClone;
         sm.memoryStorage.entries.updateKeys();
+        if ((stateClone.groups?.indexOf('favourites') ?? -1) > -1) {
+            sm.appendFavouritesOrderKey?.(`${stateClone.createdAt}`);
+        }
         sm.updateStorage();
         return stateClone;
     };
@@ -728,6 +811,8 @@
         if (!draft.dirty) {
             return;
         }
+        const entryStateKey = `${entry.data.createdAt ?? ''}`;
+        const wasFavourite = (entry.data.groups?.indexOf('favourites') ?? -1) > -1;
         const assignDraftData = (targetState, baseGroups) => {
             const finalName = `${draft.name ?? ''}`.trim();
             if (finalName.length > 0) {
@@ -742,6 +827,13 @@
             };
         };
         assignDraftData(entry.data, entry.data.groups || []);
+        const isFavourite = (entry.data.groups?.indexOf('favourites') ?? -1) > -1;
+        if (!wasFavourite && isFavourite) {
+            sm.appendFavouritesOrderKey?.(entryStateKey);
+        }
+        else if (wasFavourite && !isFavourite) {
+            sm.removeFavouritesOrderKey?.(entryStateKey);
+        }
         sm.activeProfileDraft = null;
         sm.updateStorage();
         sm.updateEntryIndicators(entry);
@@ -1149,15 +1241,153 @@
             <option value="type">Type</option>
         `;
         sortSelect.value = sm.entryFilter.sort;
+        sortSelect.title = 'Sort entries';
         sortSelect.addEventListener('change', () => {
             sm.entryFilter.sort = sortSelect.value;
             sm.persistEntryFilterIfEnabled();
             sm.queueEntriesUpdate(updateEntriesDebounceMs);
         });
+        const reorderContainer = sm.createElementWithClassList('div', 'sd-webui-sm-reorder-container');
+        const reorderToggleButton = sm.createElementWithInnerTextAndClassList('button', 'Reorder', 'sd-webui-sm-reorder-button');
+        const reorderMoveLeftButton = sm.createElementWithInnerTextAndClassList('button', '←', 'sd-webui-sm-reorder-button');
+        const reorderMoveRightButton = sm.createElementWithInnerTextAndClassList('button', '→', 'sd-webui-sm-reorder-button');
+        const reorderSaveButton = sm.createElementWithInnerTextAndClassList('button', 'Save Order', 'sd-webui-sm-reorder-button');
+        const reorderCancelButton = sm.createElementWithInnerTextAndClassList('button', 'Cancel', 'sd-webui-sm-reorder-button');
+        reorderMoveLeftButton.title = 'Move selected config left';
+        reorderMoveRightButton.title = 'Move selected config right';
+        reorderSaveButton.title = 'Save custom config order';
+        reorderCancelButton.title = 'Discard custom order changes';
+        reorderContainer.appendChild(reorderToggleButton);
+        reorderContainer.appendChild(reorderMoveLeftButton);
+        reorderContainer.appendChild(reorderMoveRightButton);
+        reorderContainer.appendChild(reorderSaveButton);
+        reorderContainer.appendChild(reorderCancelButton);
+        filterRow.appendChild(reorderContainer);
         const sortContainer = sm.createElementWithClassList('div', 'sd-webui-sm-sort-container');
         sortContainer.appendChild(sortLabel);
         sortContainer.appendChild(sortSelect);
         filterRow.appendChild(sortContainer);
+        sm.configReorderState = sm.configReorderState || {
+            active: false,
+            originalOrder: [],
+            workingOrder: [],
+            hasChanges: false,
+            previousSort: sm.entryFilter.sort
+        };
+        const areStringArraysEqual = (a, b) => a.length == b.length && a.every((value, index) => value == b[index]);
+        sm.enterConfigReorderMode = function () {
+            if (sm.configReorderState?.active || sm.activePanelTab != 'favourites') {
+                return;
+            }
+            const baseOrder = sm.ensureFavouritesOrder();
+            sm.configReorderState = {
+                active: true,
+                originalOrder: [...baseOrder],
+                workingOrder: [...baseOrder],
+                hasChanges: false,
+                previousSort: sm.entryFilter.sort
+            };
+            sm.syncConfigReorderControlsState?.();
+            sm.queueEntriesUpdate(0);
+        };
+        sm.moveSelectedConfigOrder = function (direction) {
+            if (!sm.configReorderState?.active) {
+                return;
+            }
+            const selectedStateKey = sm.getSelectedConfigStateKey?.();
+            if (!selectedStateKey) {
+                sm.syncConfigReorderControlsState?.();
+                return;
+            }
+            const workingOrder = sm.getNormalisedFavouritesOrder(sm.configReorderState.workingOrder);
+            const currentIndex = workingOrder.indexOf(selectedStateKey);
+            const targetIndex = currentIndex + direction;
+            if (currentIndex < 0 || targetIndex < 0 || targetIndex >= workingOrder.length) {
+                sm.syncConfigReorderControlsState?.();
+                return;
+            }
+            [workingOrder[currentIndex], workingOrder[targetIndex]] = [workingOrder[targetIndex], workingOrder[currentIndex]];
+            sm.configReorderState.workingOrder = workingOrder;
+            sm.configReorderState.hasChanges = !areStringArraysEqual(workingOrder, sm.configReorderState.originalOrder || []);
+            sm.syncConfigReorderControlsState?.();
+            sm.queueEntriesUpdate(0);
+        };
+        sm.saveConfigReorderChanges = function () {
+            if (!sm.configReorderState?.active) {
+                return;
+            }
+            sm.memoryStorage.favouritesOrder = sm.getNormalisedFavouritesOrder(sm.configReorderState.workingOrder);
+            sm.configReorderState = {
+                active: false,
+                originalOrder: [],
+                workingOrder: [],
+                hasChanges: false,
+                previousSort: sm.entryFilter.sort
+            };
+            sm.updateStorage();
+            sm.syncConfigReorderControlsState?.();
+            sm.queueEntriesUpdate(0);
+        };
+        sm.cancelConfigReorderChanges = function () {
+            if (!sm.configReorderState?.active) {
+                return;
+            }
+            sm.entryFilter.sort = sm.getNormalisedSortValue(sm.configReorderState.previousSort);
+            sm.persistEntryFilterIfEnabled();
+            sm.syncEntryFilterControls();
+            sm.configReorderState = {
+                active: false,
+                originalOrder: [],
+                workingOrder: [],
+                hasChanges: false,
+                previousSort: sm.entryFilter.sort
+            };
+            sm.syncConfigReorderControlsState?.();
+            sm.queueEntriesUpdate(0);
+        };
+        sm.syncConfigReorderControlsState = function () {
+            const isConfigsTab = sm.activePanelTab == 'favourites';
+            const isActive = Boolean(sm.configReorderState?.active);
+
+            if (!isConfigsTab && isActive) {
+                sm.cancelConfigReorderChanges?.();
+                return;
+            }
+            if (!isConfigsTab && sm.entryFilter.sort == 'manual') {
+                sm.entryFilter.sort = 'newest';
+                sm.persistEntryFilterIfEnabled();
+                sm.syncEntryFilterControls();
+            }
+
+            const selectedStateKey = isActive ? sm.getSelectedConfigStateKey?.() : null;
+            const workingOrder = sm.getNormalisedFavouritesOrder(sm.configReorderState?.workingOrder || []);
+            const selectedIndex = selectedStateKey ? workingOrder.indexOf(selectedStateKey) : -1;
+            const isSingleSelection = Boolean(selectedStateKey && selectedIndex > -1);
+            const canMoveLeft = isSingleSelection && selectedIndex > 0;
+            const canMoveRight = isSingleSelection && selectedIndex < workingOrder.length - 1;
+            const hasChanges = Boolean(isActive && sm.configReorderState?.hasChanges);
+            reorderContainer.style.display = isConfigsTab ? 'inline-flex' : 'none';
+            sortContainer.style.display = isConfigsTab ? 'none' : 'inline-flex';
+            reorderContainer.classList.toggle('active', isActive);
+            reorderToggleButton.classList.toggle('active', isActive);
+            reorderToggleButton.innerText = isActive ? 'Reordering...' : 'Reorder';
+            reorderToggleButton.title = isActive ? 'Reorder mode is active' : 'Edit config order';
+            sortSelect.disabled = isConfigsTab && isActive;
+            sortSelect.title = sortSelect.disabled ? 'Sorting is disabled while reordering configs' : 'Sort entries';
+            for (const button of [reorderMoveLeftButton, reorderMoveRightButton, reorderSaveButton, reorderCancelButton]) {
+                button.classList.toggle('sd-webui-sm-hidden', !isActive);
+            }
+            reorderMoveLeftButton.disabled = !canMoveLeft;
+            reorderMoveRightButton.disabled = !canMoveRight;
+            reorderSaveButton.disabled = !hasChanges;
+            reorderCancelButton.disabled = !isActive;
+        };
+        reorderToggleButton.addEventListener('click', () => sm.enterConfigReorderMode?.());
+        reorderMoveLeftButton.addEventListener('click', () => sm.moveSelectedConfigOrder?.(-1));
+        reorderMoveRightButton.addEventListener('click', () => sm.moveSelectedConfigOrder?.(1));
+        reorderSaveButton.addEventListener('click', () => sm.saveConfigReorderChanges?.());
+        reorderCancelButton.addEventListener('click', () => sm.cancelConfigReorderChanges?.());
+        sm.syncConfigReorderControlsState?.();
         entryHeader.appendChild(searchRow);
         entryHeader.appendChild(filterRow);
         // Entries
@@ -1405,6 +1635,7 @@
             updateShowSavedConfigsToggleVisibility();
             sm.syncConfigCardNameVisibility?.();
             sm.syncConfigTypeBadgeVisibility?.();
+            sm.syncConfigReorderControlsState?.();
         };
         sm.syncNavTabOrder();
         sm.syncPanelTabButtons();
@@ -1765,9 +1996,22 @@
         sm.ensureEntrySlotCount(currentEntriesPerPage);
         const filteredEntries = Object.entries(sm.memoryStorage.entries.data).filter(kv => sm.entryFilter.matches(kv[1]));
         const sortBy = sm.entryFilter.sort;
+        const useManualConfigSort = sm.entryFilter.group == 'favourites';
+        const manualOrder = useManualConfigSort ? sm.getActiveFavouritesOrder?.() : [];
+        const manualOrderIndexes = new Map((manualOrder || []).map((stateKey, index) => [stateKey, index]));
         filteredEntries.sort((a, b) => {
             const aState = a[1];
             const bState = b[1];
+            const aKey = `${a[0] ?? ''}`;
+            const bKey = `${b[0] ?? ''}`;
+            if (useManualConfigSort) {
+                const aIndex = manualOrderIndexes.has(aKey) ? manualOrderIndexes.get(aKey) : Number.MAX_SAFE_INTEGER;
+                const bIndex = manualOrderIndexes.has(bKey) ? manualOrderIndexes.get(bKey) : Number.MAX_SAFE_INTEGER;
+                if (aIndex != bIndex) {
+                    return aIndex - bIndex;
+                }
+                return (Number(bState.createdAt ?? b[0]) || 0) - (Number(aState.createdAt ?? a[0]) || 0);
+            }
             switch (sortBy) {
                 case 'oldest':
                     return (Number(aState.createdAt ?? a[0]) || 0) - (Number(bState.createdAt ?? b[0]) || 0);
@@ -1856,6 +2100,7 @@
         }
         sm.selection.entries = Array.from(entries.childNodes).filter((entry) => entry.style.display != 'none' && entry.classList.contains('active'));
         sm.renderQuickConfigMenu?.();
+        sm.syncConfigReorderControlsState?.();
     };
     sm.updateEntryIndicators = function (entry) {
         entry.classList.toggle('config', (entry.data.groups?.indexOf('favourites') ?? -1) > -1);
@@ -2394,11 +2639,15 @@
         state.groups = [group];
         sm.memoryStorage.entries.data[state.createdAt] = state;
         sm.memoryStorage.entries.updateKeys();
+        if (group == 'favourites') {
+            sm.appendFavouritesOrderKey?.(`${state.createdAt}`);
+        }
         sm.updateStorage();
     };
     sm.deleteStates = function (requireConfirmation, ...stateKeys) {
         if (requireConfirmation && confirm(`Delete ${stateKeys.length} item${stateKeys.length == 1 ? '' : 's'}? This action cannot be undone.`)) {
             for (const key of stateKeys) {
+                sm.removeFavouritesOrderKey?.(`${key ?? ''}`);
                 delete sm.memoryStorage.entries.data[key];
             }
             sm.memoryStorage.entries.updateKeys();
@@ -2411,6 +2660,9 @@
         if (state.groups.indexOf(group) == -1) {
             state.groups.push(group);
         }
+        if (group == 'favourites') {
+            sm.appendFavouritesOrderKey?.(`${stateKey ?? ''}`);
+        }
         sm.updateStorage();
     };
     sm.removeStateFromGroup = function (stateKey, group) {
@@ -2421,6 +2673,9 @@
         const groupIndex = state.groups.indexOf(group);
         if (groupIndex > -1) { // It was in this group
             state.groups.splice(groupIndex, 1);
+            if (group == 'favourites') {
+                sm.removeFavouritesOrderKey?.(`${stateKey ?? ''}`);
+            }
             if (state.groups.length == 0) {
                 delete sm.memoryStorage.entries.data[stateKey];
                 sm.memoryStorage.entries.updateKeys();
@@ -2553,6 +2808,7 @@
         if (sm.utils.isEmptyObject(storedData) || storedData == "") {
             return {
                 defaults: {},
+                favouritesOrder: [],
                 entries: {}
             };
         }
@@ -2563,6 +2819,7 @@
         const decompressed = await sm.utils.decompress(bytes);
         return JSON.parse(decompressed) || {
             defaults: {},
+            favouritesOrder: [],
             entries: {}
         };
     };
@@ -2586,6 +2843,7 @@
             else {
                 return response.data || {
                     defaults: {},
+                    favouritesOrder: [],
                     entries: {}
                 };
             }
@@ -2631,6 +2889,7 @@
         // due to the great amounts of repetition in entry strings (such as 'SDE++ 2M Karras' and `longCheckpointMixNameV1.23 [3942ab99c]` e.g.)
         const compressed = await sm.utils.compress(JSON.stringify({
             defaults: sm.memoryStorage.savedDefaults,
+            favouritesOrder: sm.memoryStorage.favouritesOrder,
             entries: sm.memoryStorage.entries.data
         }));
         return compressed;
@@ -2643,6 +2902,7 @@
         sm.memoryStorage = {
             currentDefault: null,
             savedDefaults: storedData.defaults || {},
+            favouritesOrder: [],
             entries: {
                 data: storedData.entries || {},
                 orderedKeys: [],
@@ -2653,6 +2913,7 @@
             }
         };
         sm.memoryStorage.entries.updateKeys();
+        sm.memoryStorage.favouritesOrder = sm.getNormalisedFavouritesOrder(storedData.favouritesOrder);
         // Load default UI settings
         // sm.inspector.innerHTML = "Loading current UI defaults...";
         return sm.api.get("uidefaults")
@@ -3153,6 +3414,7 @@
     memoryStorage: {
         currentDefault: null,
         savedDefaults: null,
+        favouritesOrder: [],
         entries: {
             data: {},
             orderedKeys: [],
@@ -3253,6 +3515,7 @@
                     break;
             }
             window.stateManager.updateInspector();
+            window.stateManager.syncConfigReorderControlsState?.();
         }
     }
 });
