@@ -1990,6 +1990,9 @@ declare let onAfterUiUpdate: (callback) => void;
         return container;
     };
     sm.toggle = function () {
+        if (!sm.utils.getCurrentGenerationTypeFromUI()) {
+            return;
+        }
         sm.mountPanelContainer();
         const panelContainer = app.querySelector('.sd-webui-sm-panel-container');
         panelContainer.classList.toggle('open');
@@ -2003,6 +2006,17 @@ declare let onAfterUiUpdate: (callback) => void;
         if (!sm.panelContainer) {
             return;
         }
+        const generationType = sm.utils.getCurrentGenerationTypeFromUI();
+        const isGenerationTab = generationType == 'txt2img' || generationType == 'img2img';
+        if (!isGenerationTab) {
+            sm.panelContainer.style.display = 'none';
+            if (sm.panelContainer.classList.contains('sd-webui-sm-modal-panel')) {
+                sm.panelContainer.classList.remove('sd-webui-sm-modal-panel');
+                sm.syncModalOverlayState();
+            }
+            return;
+        }
+        sm.panelContainer.style.removeProperty('display');
         const isModal = sm.panelContainer.classList.contains('sd-webui-sm-modal-panel');
         const isSmallViewMode = sm.isSmallViewMode();
         const shouldResetPage = isSmallViewMode && !sm.uiSettings.showSmallViewPagination && sm.currentPage !== 0;
@@ -2022,8 +2036,7 @@ declare let onAfterUiUpdate: (callback) => void;
             }
             return;
         }
-        const generationType = sm.utils.getCurrentGenerationTypeFromUI();
-        const resultsPanel = generationType ? app.querySelector(`#${generationType}_results_panel`) : null;
+        const resultsPanel = app.querySelector(`#${generationType}_results_panel`);
         if (resultsPanel) {
             if (resultsPanel.nextElementSibling != sm.panelContainer) {
                 resultsPanel.insertAdjacentElement('afterend', sm.panelContainer);
