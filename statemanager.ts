@@ -113,9 +113,11 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
     const updateStorageDebounceMs = 600;
     const uiSettingsStorageKey = 'sd-webui-state-manager-ui-settings';
     const entryFilterStorageKey = 'sd-webui-state-manager-entry-filter';
+    const previewObserverRootMargin = '120px';
     const validSorts = new Set(['newest', 'oldest', 'name', 'type']);
     const validPanelTabs = new Set(['history', 'favourites', 'settings']);
     const validDateFormats = new Set(['ddmmyyyy', 'mmddyyyy']);
+    const loadedPreviewUrls = new Set<string>();
     
     let entryEventListenerAbortController = new AbortController();
     let updateEntriesDebounceHandle: number | null = null;
@@ -733,6 +735,93 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         }
 
         return entriesPerPage;
+    }
+
+    sm.ensurePreviewObserver = function(root: HTMLElement): void{
+        if(sm.previewObserver || typeof IntersectionObserver === 'undefined'){
+            return;
+        }
+
+        sm.previewObserver = new IntersectionObserver((entries: IntersectionObserverEntry[]) => {
+            for(const observerEntry of entries){
+                if(!observerEntry.isIntersecting){
+                    continue;
+                }
+
+                const targetEntry = <Entry>observerEntry.target;
+                sm.previewObserver?.unobserve(targetEntry);
+
+                const previewSrc = `${targetEntry.dataset['previewSrc'] ?? ''}`;
+
+                if(previewSrc.length == 0){
+                    continue;
+                }
+
+                sm.applyEntryPreview(targetEntry, previewSrc);
+            }
+        }, {
+            root,
+            rootMargin: previewObserverRootMargin
+        });
+    }
+
+    sm.clearEntryPreview = function(entry: Entry): void{
+        sm.previewObserver?.unobserve(entry);
+        delete entry.dataset['previewSrc'];
+        delete entry.dataset['previewLoaded'];
+        entry.style.backgroundImage = '';
+    }
+
+    sm.applyEntryPreview = function(entry: Entry, previewSrc: string): void{
+        const applyIfCurrent = () => {
+            if(`${entry.dataset['previewSrc'] ?? ''}` !== previewSrc){
+                return;
+            }
+
+            entry.style.backgroundImage = `url("${previewSrc}")`;
+            entry.dataset['previewLoaded'] = previewSrc;
+            loadedPreviewUrls.add(previewSrc);
+        };
+
+        if(loadedPreviewUrls.has(previewSrc)){
+            applyIfCurrent();
+            return;
+        }
+
+        const preloadedImage = new Image();
+        preloadedImage.onload = applyIfCurrent;
+        preloadedImage.onerror = applyIfCurrent;
+        preloadedImage.src = previewSrc;
+    }
+
+    sm.queueEntryPreview = function(entry: Entry, previewSrc: string): void{
+        entry.dataset['previewSrc'] = previewSrc;
+
+        if(`${entry.dataset['previewLoaded'] ?? ''}` === previewSrc){
+            entry.style.backgroundImage = `url("${previewSrc}")`;
+            return;
+        }
+
+        entry.style.backgroundImage = '';
+
+        if(previewSrc.length == 0){
+            return;
+        }
+
+        if(typeof IntersectionObserver === 'undefined'){
+            sm.applyEntryPreview(entry, previewSrc);
+            return;
+        }
+
+        const entriesRoot = <HTMLElement | null>sm.panelContainer?.querySelector('.sd-webui-sm-entries');
+
+        if(!entriesRoot){
+            sm.applyEntryPreview(entry, previewSrc);
+            return;
+        }
+
+        sm.ensurePreviewObserver(entriesRoot);
+        sm.previewObserver?.observe(entry);
     }
 
     sm.syncModalOverlayState = function(): void{
@@ -1728,7 +1817,7 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
             const entryStateKey = `${data.createdAt ?? ''}`;
 
             entry.data = data;
-            entry.style.backgroundImage = `url("${data.preview}")`;
+            sm.queueEntryPreview(entry, `${data.preview ?? ''}`);
             entry.style.display = 'inherit';
             entry.classList.toggle('active', sm.selection.selectedStateKeys.has(entryStateKey));
 
@@ -1761,8 +1850,10 @@ type SaveLocation = 'Browser\'s Indexed DB' | 'File';
         }
 
         for(let i = numEntries; i < entries.childNodes.length; i++){
-            entries.childNodes[i].classList.remove('active');
-            entries.childNodes[i].style.display = 'none';
+            const hiddenEntry = <Entry>entries.childNodes[i];
+            hiddenEntry.classList.remove('active');
+            hiddenEntry.style.display = 'none';
+            sm.clearEntryPreview(hiddenEntry);
         }
 
         sm.selection.entries = <Entry[]>Array.from(entries.childNodes).filter((entry: Entry) => entry.style.display != 'none' && entry.classList.contains('active'));

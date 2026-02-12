@@ -15,9 +15,11 @@
     const updateStorageDebounceMs = 600;
     const uiSettingsStorageKey = 'sd-webui-state-manager-ui-settings';
     const entryFilterStorageKey = 'sd-webui-state-manager-entry-filter';
+    const previewObserverRootMargin = '120px';
     const validSorts = new Set(['newest', 'oldest', 'name', 'type']);
     const validPanelTabs = new Set(['history', 'favourites', 'settings']);
     const validDateFormats = new Set(['ddmmyyyy', 'mmddyyyy']);
+    const loadedPreviewUrls = new Set();
     let entryEventListenerAbortController = new AbortController();
     let updateEntriesDebounceHandle = null;
     let updateStorageDebounceHandle = null;
@@ -508,6 +510,74 @@
             return Math.max(1, Number.parseInt(`${sm.uiSettings.smallViewEntriesPerPage ?? ''}`) || entriesPerPage);
         }
         return entriesPerPage;
+    };
+    sm.ensurePreviewObserver = function (root) {
+        if (sm.previewObserver || typeof IntersectionObserver === 'undefined') {
+            return;
+        }
+        sm.previewObserver = new IntersectionObserver((entries) => {
+            for (const observerEntry of entries) {
+                if (!observerEntry.isIntersecting) {
+                    continue;
+                }
+                const targetEntry = observerEntry.target;
+                sm.previewObserver?.unobserve(targetEntry);
+                const previewSrc = `${targetEntry.dataset['previewSrc'] ?? ''}`;
+                if (previewSrc.length == 0) {
+                    continue;
+                }
+                sm.applyEntryPreview(targetEntry, previewSrc);
+            }
+        }, {
+            root,
+            rootMargin: previewObserverRootMargin
+        });
+    };
+    sm.clearEntryPreview = function (entry) {
+        sm.previewObserver?.unobserve(entry);
+        delete entry.dataset['previewSrc'];
+        delete entry.dataset['previewLoaded'];
+        entry.style.backgroundImage = '';
+    };
+    sm.applyEntryPreview = function (entry, previewSrc) {
+        const applyIfCurrent = () => {
+            if (`${entry.dataset['previewSrc'] ?? ''}` !== previewSrc) {
+                return;
+            }
+            entry.style.backgroundImage = `url("${previewSrc}")`;
+            entry.dataset['previewLoaded'] = previewSrc;
+            loadedPreviewUrls.add(previewSrc);
+        };
+        if (loadedPreviewUrls.has(previewSrc)) {
+            applyIfCurrent();
+            return;
+        }
+        const preloadedImage = new Image();
+        preloadedImage.onload = applyIfCurrent;
+        preloadedImage.onerror = applyIfCurrent;
+        preloadedImage.src = previewSrc;
+    };
+    sm.queueEntryPreview = function (entry, previewSrc) {
+        entry.dataset['previewSrc'] = previewSrc;
+        if (`${entry.dataset['previewLoaded'] ?? ''}` === previewSrc) {
+            entry.style.backgroundImage = `url("${previewSrc}")`;
+            return;
+        }
+        entry.style.backgroundImage = '';
+        if (previewSrc.length == 0) {
+            return;
+        }
+        if (typeof IntersectionObserver === 'undefined') {
+            sm.applyEntryPreview(entry, previewSrc);
+            return;
+        }
+        const entriesRoot = sm.panelContainer?.querySelector('.sd-webui-sm-entries');
+        if (!entriesRoot) {
+            sm.applyEntryPreview(entry, previewSrc);
+            return;
+        }
+        sm.ensurePreviewObserver(entriesRoot);
+        sm.previewObserver?.observe(entry);
     };
     sm.syncModalOverlayState = function () {
         const isModalOpen = Boolean(sm.panelContainer?.classList.contains('sd-webui-sm-modal-panel') && sm.panelContainer?.classList.contains('open'));
@@ -1307,7 +1377,7 @@
             const entry = entries.childNodes[i];
             const entryStateKey = `${data.createdAt ?? ''}`;
             entry.data = data;
-            entry.style.backgroundImage = `url("${data.preview}")`;
+            sm.queueEntryPreview(entry, `${data.preview ?? ''}`);
             entry.style.display = 'inherit';
             entry.classList.toggle('active', sm.selection.selectedStateKeys.has(entryStateKey));
             const creationDate = new Date(data.createdAt);
@@ -1336,8 +1406,10 @@
             sm.updateEntryIndicators(entry);
         }
         for (let i = numEntries; i < entries.childNodes.length; i++) {
-            entries.childNodes[i].classList.remove('active');
-            entries.childNodes[i].style.display = 'none';
+            const hiddenEntry = entries.childNodes[i];
+            hiddenEntry.classList.remove('active');
+            hiddenEntry.style.display = 'none';
+            sm.clearEntryPreview(hiddenEntry);
         }
         sm.selection.entries = Array.from(entries.childNodes).filter((entry) => entry.style.display != 'none' && entry.classList.contains('active'));
     };
