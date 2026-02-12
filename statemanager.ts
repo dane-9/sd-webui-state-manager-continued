@@ -3065,10 +3065,12 @@ declare let onAfterUiUpdate: (callback) => void;
                     return sourceData;
                 }
                 else {
-                    (direction == 'idb2file' ? sm.getFileStorage() : sm.getLocalStorage())
+                    return (direction == 'idb2file' ? sm.getFileStorage() : sm.getLocalStorage())
                         .then(sm.processStorageData)
                         .then(destinationData => {
                         Object.assign(destinationData, sourceData);
+                        Object.assign(destinationData.defaults, sourceData.defaults);
+                        Object.assign(destinationData.entries, sourceData.entries);
                         return destinationData;
                     })
                         .catch(e => sm.utils.logResponseError("[State Manager] Could not merge data", e));
