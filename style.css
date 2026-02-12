@@ -743,8 +743,7 @@ body.sd-webui-sm-modal-open {
     grid-column: 1;
     grid-row: 3;
     border: 1px solid var(--border-color-primary);
-    padding-left: 0;
-    padding-top: 6px;
+    padding: 6px;
 }
 
 .sd-webui-sm-settings-panel {
