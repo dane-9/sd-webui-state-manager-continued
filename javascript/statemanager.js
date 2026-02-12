@@ -11,6 +11,7 @@
     const looselyEqualUIValues = new Set([null, undefined, "", "None"]);
     const entriesPerPage = 25;
     const initialEntrySlotCount = entriesPerPage;
+    const previewImageMaxSize = 100;
     const updateEntriesDebounceMs = 150;
     const updateStorageDebounceMs = 600;
     const uiSettingsStorageKey = 'sd-webui-state-manager-ui-settings';
@@ -583,6 +584,25 @@
         const isModalOpen = Boolean(sm.panelContainer?.classList.contains('sd-webui-sm-modal-panel') && sm.panelContainer?.classList.contains('open'));
         document.body.classList.toggle('sd-webui-sm-modal-open', isModalOpen);
     };
+    sm.getSavedUiPreviewImagePath = function () {
+        if (typeof sm.savedUiPreviewImagePath === 'string' && sm.savedUiPreviewImagePath.length > 0) {
+            return sm.savedUiPreviewImagePath;
+        }
+        const scriptSource = Array
+            .from(document.querySelectorAll('script[src]'))
+            .map((script) => `${script.src ?? ''}`)
+            .find((src) => /\/javascript\/[^/]*statemanager[^/]*\.js(?:\?|$)/i.test(src));
+        if (scriptSource) {
+            sm.savedUiPreviewImagePath = scriptSource.replace(/\/javascript\/[^/?#]+\.js(?:[?#].*)?$/i, '/resources/icon-saved-ui.webp');
+            return sm.savedUiPreviewImagePath;
+        }
+        const stackMatch = new Error().stack?.match((/(http(.)+)\/javascript\/[^/]+\.js/));
+        if (stackMatch) {
+            sm.savedUiPreviewImagePath = `${stackMatch[1]}/resources/icon-saved-ui.webp`;
+            return sm.savedUiPreviewImagePath;
+        }
+        return null;
+    };
     sm.captureInspectorAccordionState = function () {
         if (!sm.inspector) {
             return;
@@ -624,7 +644,11 @@
             if (generationType != null) {
                 const currentState = await sm.getCurrentState(generationType);
                 currentState.name = "Saved UI " + new Date().toISOString().replace('T', ' ').replace(/\.\d+Z/, '');
-                currentState.preview = new Error().stack.match((/(http(.)+)\/javascript\/[a-zA-Z0-9]+\.js/))[1] + "/resources/icon-saved-ui.webp";
+                currentState.isUiSaveConfig = true;
+                const savedUiPreviewPath = sm.getSavedUiPreviewImagePath();
+                if (savedUiPreviewPath) {
+                    currentState.preview = savedUiPreviewPath;
+                }
                 sm.saveState(currentState, 'favourites');
                 showQuickSettingSaveButtonResult(true);
                 sm.updateEntries();
@@ -1098,6 +1122,12 @@
             entry.style.display = 'none';
             entry.appendChild(sm.createElementWithClassList('div', 'type'));
             entry.appendChild(sm.createElementWithClassList('div', 'config-name'));
+            const gearButton = sm.createElementWithClassList('div', 'sd-webui-sm-entry-gear');
+            gearButton.innerText = '⚙';
+            gearButton.title = 'Config actions';
+            gearButton.tabIndex = 0;
+            gearButton.setAttribute('role', 'button');
+            entry.appendChild(gearButton);
             const footer = sm.createElementWithClassList('div', 'footer');
             footer.appendChild(sm.createElementWithClassList('div', 'date'));
             footer.appendChild(sm.createElementWithClassList('div', 'time'));
@@ -1110,6 +1140,73 @@
             }
         };
         sm.ensureEntrySlotCount(initialEntrySlotCount);
+        const previewFileInput = document.createElement('input');
+        previewFileInput.type = 'file';
+        previewFileInput.accept = 'image/*';
+        previewFileInput.style.display = 'none';
+        entryContainer.appendChild(previewFileInput);
+        const entryGearMenu = sm.createElementWithClassList('div', 'sd-webui-sm-entry-gear-menu');
+        const changePreviewAction = sm.createElementWithInnerTextAndClassList('button', 'Change Preview...', 'sd-webui-sm-entry-gear-menu-action');
+        entryGearMenu.appendChild(changePreviewAction);
+        entryContainer.appendChild(entryGearMenu);
+        let activeGearMenuEntry = null;
+        let pendingPreviewStateKey = '';
+        const closeEntryGearMenu = () => {
+            activeGearMenuEntry = null;
+            entryGearMenu.style.display = 'none';
+            entryGearMenu.dataset['open'] = 'false';
+        };
+        const openEntryGearMenu = (entry, triggerElement) => {
+            activeGearMenuEntry = entry;
+            entryGearMenu.dataset['open'] = 'true';
+            entryGearMenu.style.display = 'block';
+            entryGearMenu.style.left = '0px';
+            entryGearMenu.style.top = '0px';
+            entryGearMenu.style.visibility = 'hidden';
+            const menuPadding = 8;
+            const triggerBounds = triggerElement.getBoundingClientRect();
+            const menuBounds = entryGearMenu.getBoundingClientRect();
+            const maxLeft = window.innerWidth - menuBounds.width - menuPadding;
+            const maxTop = window.innerHeight - menuBounds.height - menuPadding;
+            const left = Math.min(Math.max(triggerBounds.right - menuBounds.width, menuPadding), Math.max(menuPadding, maxLeft));
+            const top = Math.min(Math.max(triggerBounds.bottom + 4, menuPadding), Math.max(menuPadding, maxTop));
+            entryGearMenu.style.left = `${left}px`;
+            entryGearMenu.style.top = `${top}px`;
+            entryGearMenu.style.visibility = 'visible';
+        };
+        sm.closeEntryGearMenu = closeEntryGearMenu;
+        changePreviewAction.addEventListener('click', () => {
+            if (!activeGearMenuEntry || !activeGearMenuEntry.data) {
+                closeEntryGearMenu();
+                return;
+            }
+            const stateKey = `${activeGearMenuEntry.data.createdAt ?? ''}`;
+            const targetState = sm.memoryStorage.entries.data[stateKey];
+            if (!targetState) {
+                closeEntryGearMenu();
+                return;
+            }
+            pendingPreviewStateKey = stateKey;
+            closeEntryGearMenu();
+            previewFileInput.value = '';
+            previewFileInput.click();
+        });
+        previewFileInput.addEventListener('change', async () => {
+            const selectedFile = previewFileInput.files?.[0];
+            const targetState = sm.memoryStorage.entries.data[pendingPreviewStateKey];
+            pendingPreviewStateKey = '';
+            if (!selectedFile || !targetState) {
+                return;
+            }
+            const previewData = await sm.createPreviewImageDataFromFile(selectedFile);
+            if (!previewData) {
+                alert('Failed to read preview image.');
+                return;
+            }
+            targetState.preview = previewData;
+            sm.updateStorage();
+            sm.queueEntriesUpdate(0);
+        });
         const getEntryFromEvent = (event) => {
             if (!(event.target instanceof Element)) {
                 return null;
@@ -1121,6 +1218,27 @@
             return entry;
         };
         entries.addEventListener('click', (event) => {
+            if (!(event.target instanceof Element)) {
+                return;
+            }
+            const gearButton = event.target.closest('.sd-webui-sm-entry-gear');
+            if (gearButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                const entry = gearButton.closest('.sd-webui-sm-entry');
+                if (!entry || !entry.data || entry.style.display == 'none') {
+                    closeEntryGearMenu();
+                    return;
+                }
+                if (entryGearMenu.dataset['open'] == 'true' && activeGearMenuEntry == entry) {
+                    closeEntryGearMenu();
+                }
+                else {
+                    openEntryGearMenu(entry, gearButton);
+                }
+                return;
+            }
+            closeEntryGearMenu();
             const entry = getEntryFromEvent(event);
             if (!entry) {
                 return;
@@ -1151,6 +1269,33 @@
             }
             sm.applyAll(entry.data);
         });
+        entries.addEventListener('keydown', (event) => {
+            if (event.key != 'Enter' && event.key != ' ') {
+                return;
+            }
+            if (!(event.target instanceof Element)) {
+                return;
+            }
+            const gearButton = event.target.closest('.sd-webui-sm-entry-gear');
+            if (!gearButton) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            gearButton.click();
+        });
+        document.addEventListener('mousedown', (event) => {
+            if (entryGearMenu.dataset['open'] != 'true') {
+                return;
+            }
+            if (!(event.target instanceof Element)) {
+                return;
+            }
+            if (event.target.closest('.sd-webui-sm-entry-gear') || event.target.closest('.sd-webui-sm-entry-gear-menu')) {
+                return;
+            }
+            closeEntryGearMenu();
+        });
         // Add to DOM
         panel.appendChild(nav);
         panel.appendChild(entryContainer);
@@ -1175,6 +1320,9 @@
             return originaSubmitImg2img(...arguments);
         };
         document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+                sm.closeEntryGearMenu?.();
+            }
             if (event.key !== 'Escape' || !sm.panelContainer.classList.contains('sd-webui-sm-modal-panel')) {
                 return;
             }
@@ -1313,6 +1461,7 @@
             sm.updateEntriesWhenStorageReady = true;
             return;
         }
+        sm.closeEntryGearMenu?.();
         // Clear old listeners
         entryEventListenerAbortController.abort();
         entryEventListenerAbortController = new AbortController();
@@ -2416,7 +2565,7 @@
             return null;
         }
         // const imageSize = {x: 100, y: 100};
-        const scale = 100 / Math.max(image.naturalWidth, image.naturalHeight);
+        const scale = previewImageMaxSize / Math.max(image.naturalWidth, image.naturalHeight);
         const canvas = document.createElement("canvas");
         const ctx = canvas.getContext("2d");
         // Set width and height
@@ -2428,6 +2577,42 @@
         const webpDataURI = canvas.toDataURL('image/webp', 0.9);
         const dataURI = webpDataURI.startsWith('data:image/webp') ? webpDataURI : canvas.toDataURL();
         return dataURI;
+    };
+    sm.createPreviewImageDataFromSource = function (imageSource) {
+        return new Promise(resolve => {
+            if (!imageSource || imageSource.length == 0) {
+                resolve(null);
+                return;
+            }
+            const image = new Image();
+            image.onload = () => {
+                const scale = previewImageMaxSize / Math.max(image.naturalWidth, image.naturalHeight);
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    resolve(null);
+                    return;
+                }
+                canvas.width = image.naturalWidth * scale;
+                canvas.height = image.naturalHeight * scale;
+                ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+                const webpDataURI = canvas.toDataURL('image/webp', 0.9);
+                const dataURI = webpDataURI.startsWith('data:image/webp') ? webpDataURI : canvas.toDataURL();
+                resolve(dataURI);
+            };
+            image.onerror = () => resolve(null);
+            image.src = imageSource;
+        });
+    };
+    sm.createPreviewImageDataFromFile = function (file) {
+        return new Promise(resolve => {
+            const fileReader = new FileReader();
+            fileReader.onload = async () => {
+                resolve(await sm.createPreviewImageDataFromSource(`${fileReader.result ?? ''}`));
+            };
+            fileReader.onerror = () => resolve(null);
+            fileReader.readAsDataURL(file);
+        });
     };
     sm.createElementWithClassList = function (tagName, ...classes) {
         const element = document.createElement(tagName);
