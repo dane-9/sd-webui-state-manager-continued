@@ -65,7 +65,7 @@ def get_quick_settings_names():
 def state_manager_api(blocks: gr.Blocks, app: FastAPI):
     @app.get("/statemanager/version")
     async def version():
-        return {"version": "2.0"}
+        return {"version": "3.0.0"}
 
     @app.get("/statemanager/componentids")
     async def get_component_ids():

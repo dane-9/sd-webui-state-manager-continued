@@ -1102,7 +1102,7 @@ declare let onAfterUiUpdate: (callback) => void;
             If you would prefer to go back to version 1.0, you can either: \
             <br><br> \
             <ul> \
-            <li>Go to <a href='https://github.com/SenshiSentou/sd-webui-state-manager'>the State Manager GitHub page</a>, select the <pre>V1.0-legacy</pre> branch, download the zip, and replace the <pre>sd-webui/extensions/sd-webui-state-manager</pre> folder with it.</li> \
+            <li>Go to <a href='https://github.com/dane-9/sd-webui-state-manager-continued'>the State Manager GitHub page</a>, select the <pre>V1.0-legacy</pre> branch, download the zip, and replace the <pre>sd-webui/extensions/sd-webui-state-manager</pre> folder with it.</li> \
             <li>Open a terminal, navigate (<pre>cd</pre>) to your <pre>sd-webui/extensions/sd-webui-state-manager</pre> folder, and run <pre>git checkout V1.0-legacy</pre>.</li> \
             </ul> \
             ";
