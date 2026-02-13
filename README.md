@@ -1,6 +1,12 @@
 # State Manager
 **State Manager (Continued) is a maintained fork of the original State Manager extension for AUTOMATIC1111 WebUIs.**
 
+This fork supports:
+
+*Note: Configs are not guaranteed to be interchangeable between Forge and Forge Classic, and using one in the other may cause errors.*
+- [Stable Diffusion WebUI Forge](https://github.com/lllyasviel/stable-diffusion-webui-forge)
+- [Stable Diffusion WebUI Forge Classic](https://github.com/Haoming02/sd-webui-forge-classic)
+
 It lets you save and restore your full UI setup for `txt2img` and `img2img`, so you can jump back to a working configuration without rebuilding everything by hand.
 
 If you've ever lost track of which model, sampler, or script settings you were using between runs, that's the problem this solves. Save your setup, browse your history, keep reusable configs, and bring back either the whole thing or just the parts you need.
