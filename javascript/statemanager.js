@@ -16,6 +16,7 @@
     const previewImageMaxSize = 100;
     const updateEntriesDebounceMs = 150;
     const updateStorageDebounceMs = 600;
+    const updateValueDiffDebounceMs = 120;
     const maxFilteredEntryCacheEntries = 40;
     const sortableEntryOrders = ['newest', 'oldest', 'name', 'type'];
     const modalVirtualizationColumnCount = 10;
@@ -32,6 +33,8 @@
     let updateEntriesDebounceHandle = null;
     let updateEntriesAnimationFrameHandle = null;
     let updateStorageDebounceHandle = null;
+    let updateValueDiffDebounceHandle = null;
+    let updateValueDiffAnimationFrameHandle = null;
     sm.autoSaveHistory = false;
     sm.lastHeadImage = null;
     sm.lastUsedState = null;
@@ -1086,6 +1089,33 @@
         updateStorageDebounceHandle = window.setTimeout(() => {
             updateStorageDebounceHandle = null;
             sm.updateStorage();
+        }, delayMs);
+    };
+    sm.flushQueuedValueDiffUpdate = function () {
+        if (updateValueDiffAnimationFrameHandle != null) {
+            return;
+        }
+        updateValueDiffAnimationFrameHandle = window.requestAnimationFrame(() => {
+            updateValueDiffAnimationFrameHandle = null;
+            sm.updateAllValueDiffDatas();
+        });
+    };
+    sm.queueValueDiffUpdate = function (delayMs = updateValueDiffDebounceMs) {
+        if (updateValueDiffDebounceHandle != null) {
+            clearTimeout(updateValueDiffDebounceHandle);
+            updateValueDiffDebounceHandle = null;
+        }
+        if (updateValueDiffAnimationFrameHandle != null) {
+            cancelAnimationFrame(updateValueDiffAnimationFrameHandle);
+            updateValueDiffAnimationFrameHandle = null;
+        }
+        if (delayMs <= 0) {
+            sm.flushQueuedValueDiffUpdate();
+            return;
+        }
+        updateValueDiffDebounceHandle = window.setTimeout(() => {
+            updateValueDiffDebounceHandle = null;
+            sm.flushQueuedValueDiffUpdate();
         }, delayMs);
     };
     sm.getNormalisedInspectorState = function (state) {
@@ -2320,11 +2350,25 @@
         };
         window.addEventListener('resize', handleSmallViewModeChange);
         sm.applyLoadedPreferences();
-        app.addEventListener('input', sm.updateAllValueDiffDatas);
-        app.addEventListener('change', sm.updateAllValueDiffDatas);
+        const queueValueDiffUpdateFromEvent = (event) => {
+            if (!sm.inspector || sm.inspector.childElementCount == 0) {
+                return;
+            }
+            const target = event?.target;
+            if (target instanceof Element && sm.inspector.contains(target)) {
+                return;
+            }
+            sm.queueValueDiffUpdate();
+        };
+        app.addEventListener('input', queueValueDiffUpdateFromEvent);
+        app.addEventListener('change', queueValueDiffUpdateFromEvent);
     };
     sm.updateAllValueDiffDatas = function () {
-        for (const element of app.querySelectorAll('[data-value-diff]')) {
+        const scope = sm.inspector || null;
+        if (!scope) {
+            return;
+        }
+        for (const element of scope.querySelectorAll('[data-value-diff]')) {
             element.update?.();
         }
     };
