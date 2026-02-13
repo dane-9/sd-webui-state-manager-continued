@@ -23,6 +23,8 @@ declare let onAfterUiUpdate: (callback) => void;
     const previewImageMaxSize = 100;
     const updateEntriesDebounceMs = 150;
     const updateStorageDebounceMs = 600;
+    const maxFilteredEntryCacheEntries = 40;
+    const sortableEntryOrders = ['newest', 'oldest', 'name', 'type'];
     const uiSettingsStorageKey = 'sd-webui-state-manager-ui-settings';
     const entryFilterStorageKey = 'sd-webui-state-manager-entry-filter';
     const previewObserverRootMargin = '120px';
@@ -32,6 +34,7 @@ declare let onAfterUiUpdate: (callback) => void;
     const loadedPreviewUrls = new Set();
     let entryEventListenerAbortController = new AbortController();
     let updateEntriesDebounceHandle = null;
+    let updateEntriesAnimationFrameHandle = null;
     let updateStorageDebounceHandle = null;
     sm.autoSaveHistory = false;
     sm.lastHeadImage = null;
@@ -39,6 +42,22 @@ declare let onAfterUiUpdate: (callback) => void;
     sm.quickMenuSelectedStateKey = null;
     sm.hasAppliedStartupConfig = false;
     sm.activePanelTab = 'history';
+    sm.entryCacheVersion = 0;
+    sm.manualOrderVersion = 0;
+    sm.entrySortCache = {
+        newest: [],
+        oldest: [],
+        name: [],
+        type: []
+    };
+    sm.entrySortCacheDirty = new Set(sortableEntryOrders);
+    sm.filteredEntryKeysCache = new Map();
+    sm.entrySearchBlobByKey = {};
+    sm.entriesPerformance = {
+        enabled: false,
+        logToConsole: false,
+        last: null
+    };
     sm.uiSettings = {
         historySmallViewEntriesPerPage: entriesPerPage,
         favouritesSmallViewEntriesPerPage: entriesPerPage,
@@ -349,13 +368,293 @@ declare let onAfterUiUpdate: (callback) => void;
         const showTypeBadge = Boolean(sm.uiSettings.alwaysShowConfigTypeBadge && (sm.activePanelTab == 'favourites' || sm.activePanelTab == 'history'));
         entryContainer.dataset['showConfigTypeBadge'] = `${showTypeBadge}`;
     };
+    sm.clearFilteredEntryKeysCache = function () {
+        sm.filteredEntryKeysCache = new Map();
+    };
+    sm.bumpEntryCacheVersion = function () {
+        sm.entryCacheVersion = (Number(sm.entryCacheVersion) || 0) + 1;
+        sm.clearFilteredEntryKeysCache();
+    };
+    sm.bumpManualOrderVersion = function () {
+        sm.manualOrderVersion = (Number(sm.manualOrderVersion) || 0) + 1;
+        sm.clearFilteredEntryKeysCache();
+    };
+    sm.setFilteredEntryKeysCache = function (cacheKey, keys) {
+        if (!cacheKey || !Array.isArray(keys)) {
+            return;
+        }
+        if (sm.filteredEntryKeysCache.size >= maxFilteredEntryCacheEntries) {
+            const oldestKey = sm.filteredEntryKeysCache.keys().next().value;
+            if (oldestKey) {
+                sm.filteredEntryKeysCache.delete(oldestKey);
+            }
+        }
+        sm.filteredEntryKeysCache.set(cacheKey, [...keys]);
+    };
+    sm.buildEntrySearchBlob = function (data) {
+        if (!data || typeof data !== 'object') {
+            return '';
+        }
+        const quickSettings = (data.quickSettings && typeof data.quickSettings === 'object') ? data.quickSettings : {};
+        const checkpointName = `${quickSettings['Stable Diffusion checkpoint'] ?? quickSettings['sd_model_checkpoint'] ?? ''}`;
+        const sampler = `${data.generationSettings?.sampler ?? ''}`;
+        const prompt = `${data.generationSettings?.prompt ?? ''}`;
+        const negativePrompt = `${data.generationSettings?.negativePrompt ?? ''}`;
+        const name = `${data.name ?? ''}`;
+        const type = `${data.type ?? ''}`;
+        return `${name}\n${checkpointName}\n${sampler}\n${prompt}\n${negativePrompt}\n${type}`.toLowerCase();
+    };
+    sm.getEntrySearchBlob = function (stateKey, data = null) {
+        const key = `${stateKey ?? ''}`;
+        if (key.length == 0) {
+            return '';
+        }
+        if (sm.entrySearchBlobByKey.hasOwnProperty(key)) {
+            return sm.entrySearchBlobByKey[key];
+        }
+        const finalData = data || sm.memoryStorage?.entries?.data?.[key] || null;
+        const blob = sm.buildEntrySearchBlob(finalData);
+        sm.entrySearchBlobByKey[key] = blob;
+        return blob;
+    };
+    sm.refreshEntrySearchBlob = function (stateKey, data = null) {
+        const key = `${stateKey ?? ''}`;
+        if (key.length == 0) {
+            return '';
+        }
+        const finalData = data || sm.memoryStorage?.entries?.data?.[key] || null;
+        const blob = sm.buildEntrySearchBlob(finalData);
+        sm.entrySearchBlobByKey[key] = blob;
+        return blob;
+    };
+    sm.removeEntrySearchBlob = function (stateKey) {
+        const key = `${stateKey ?? ''}`;
+        if (key.length == 0) {
+            return;
+        }
+        delete sm.entrySearchBlobByKey[key];
+    };
+    sm.rebuildEntrySearchBlobIndex = function () {
+        sm.entrySearchBlobByKey = {};
+        const entriesData = sm.memoryStorage?.entries?.data || {};
+        for (const key of Object.keys(entriesData)) {
+            sm.refreshEntrySearchBlob(key, entriesData[key]);
+        }
+    };
+    sm.getEntryCreatedAtValue = function (stateKey) {
+        const data = sm.memoryStorage?.entries?.data?.[stateKey];
+        return Number(data?.createdAt ?? stateKey) || 0;
+    };
+    sm.compareStateKeysBySort = function (aKey, bKey, sortBy) {
+        const aState = sm.memoryStorage?.entries?.data?.[aKey] || {};
+        const bState = sm.memoryStorage?.entries?.data?.[bKey] || {};
+        switch (sortBy) {
+            case 'oldest':
+                return sm.getEntryCreatedAtValue(aKey) - sm.getEntryCreatedAtValue(bKey);
+            case 'name':
+                return `${aState.name ?? ''}`.localeCompare(`${bState.name ?? ''}`) || (sm.getEntryCreatedAtValue(bKey) - sm.getEntryCreatedAtValue(aKey));
+            case 'type':
+                return `${aState.type ?? ''}`.localeCompare(`${bState.type ?? ''}`) || (sm.getEntryCreatedAtValue(bKey) - sm.getEntryCreatedAtValue(aKey));
+            case 'newest':
+            default:
+                return sm.getEntryCreatedAtValue(bKey) - sm.getEntryCreatedAtValue(aKey);
+        }
+    };
+    sm.markEntrySortCacheDirty = function (...sortOrders) {
+        const orders = sortOrders.length > 0 ? sortOrders : sortableEntryOrders;
+        for (const order of orders) {
+            sm.entrySortCacheDirty.add(order);
+        }
+        sm.clearFilteredEntryKeysCache();
+    };
+    sm.rebuildEntrySortCache = function (sortBy) {
+        const keys = Object.keys(sm.memoryStorage?.entries?.data || {});
+        keys.sort((a, b) => sm.compareStateKeysBySort(a, b, sortBy));
+        sm.entrySortCache[sortBy] = keys;
+        sm.entrySortCacheDirty.delete(sortBy);
+    };
+    sm.getSortedEntryKeys = function (sortBy) {
+        const normalisedSort = sm.getNormalisedSortValue(sortBy);
+        if (normalisedSort == 'manual') {
+            return sm.getSortedEntryKeys('newest');
+        }
+        if (sm.entrySortCacheDirty.has(normalisedSort)) {
+            sm.rebuildEntrySortCache(normalisedSort);
+        }
+        return sm.entrySortCache[normalisedSort] || [];
+    };
+    sm.insertStateKeyIntoSortCache = function (sortBy, stateKey) {
+        if (sm.entrySortCacheDirty.has(sortBy)) {
+            return;
+        }
+        const key = `${stateKey ?? ''}`;
+        if (key.length == 0) {
+            return;
+        }
+        const sortCache = sm.entrySortCache[sortBy] || [];
+        if (sortCache.indexOf(key) > -1) {
+            return;
+        }
+        let low = 0;
+        let high = sortCache.length;
+        while (low < high) {
+            const middle = Math.floor((low + high) / 2);
+            if (sm.compareStateKeysBySort(key, sortCache[middle], sortBy) < 0) {
+                high = middle;
+            }
+            else {
+                low = middle + 1;
+            }
+        }
+        sortCache.splice(low, 0, key);
+        sm.entrySortCache[sortBy] = sortCache;
+    };
+    sm.removeStateKeyFromSortCache = function (sortBy, stateKey) {
+        if (sm.entrySortCacheDirty.has(sortBy)) {
+            return;
+        }
+        const key = `${stateKey ?? ''}`;
+        if (key.length == 0) {
+            return;
+        }
+        const sortCache = sm.entrySortCache[sortBy] || [];
+        const index = sortCache.indexOf(key);
+        if (index == -1) {
+            return;
+        }
+        sortCache.splice(index, 1);
+    };
+    sm.onEntryAdded = function (stateKey, data = null) {
+        const key = `${stateKey ?? ''}`;
+        if (key.length == 0) {
+            return;
+        }
+        sm.memoryStorage?.entries?.addKey?.(key);
+        sm.refreshEntrySearchBlob(key, data);
+        for (const sortOrder of sortableEntryOrders) {
+            sm.insertStateKeyIntoSortCache(sortOrder, key);
+        }
+        sm.bumpEntryCacheVersion();
+    };
+    sm.onEntryRemoved = function (stateKey) {
+        const key = `${stateKey ?? ''}`;
+        if (key.length == 0) {
+            return;
+        }
+        sm.memoryStorage?.entries?.removeKey?.(key);
+        sm.removeEntrySearchBlob(key);
+        for (const sortOrder of sortableEntryOrders) {
+            sm.removeStateKeyFromSortCache(sortOrder, key);
+        }
+        sm.bumpEntryCacheVersion();
+    };
+    sm.onEntryUpdated = function (stateKey, data = null) {
+        const key = `${stateKey ?? ''}`;
+        if (key.length == 0) {
+            return;
+        }
+        sm.refreshEntrySearchBlob(key, data);
+        for (const sortOrder of sortableEntryOrders) {
+            sm.removeStateKeyFromSortCache(sortOrder, key);
+            sm.insertStateKeyIntoSortCache(sortOrder, key);
+        }
+        sm.bumpEntryCacheVersion();
+    };
+    sm.rebuildEntryIndexes = function () {
+        sm.markEntrySortCacheDirty();
+        sm.rebuildEntrySearchBlobIndex();
+        sm.bumpEntryCacheVersion();
+    };
+    sm.getEntryFilterContext = function (filter = sm.entryFilter) {
+        const queryLower = `${filter?.query ?? ''}`.toLowerCase();
+        const queries = queryLower.split(/, */).map((queryPart) => queryPart.trim()).filter((queryPart) => queryPart.length > 0);
+        const filterTypes = Array.isArray(filter?.types) ? [...filter.types].filter((type) => type == 'txt2img' || type == 'img2img') : ['txt2img', 'img2img'];
+        filterTypes.sort();
+        return {
+            group: `${filter?.group ?? 'history'}`,
+            query: queryLower,
+            queries: queries,
+            types: filterTypes,
+            typeSet: new Set(filterTypes),
+            showFavouritesInHistory: Boolean(filter?.showFavouritesInHistory),
+            cacheKey: `${filter?.group ?? 'history'}|${filterTypes.join(',')}|${Number(Boolean(filter?.showFavouritesInHistory))}|${queryLower}`
+        };
+    };
+    sm.getFilteredStateKeys = function () {
+        const getNow = () => (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
+        const filterContext = sm.getEntryFilterContext(sm.entryFilter);
+        const useManualConfigSort = sm.entryFilter.group == 'favourites';
+        const sortBy = sm.getNormalisedSortValue(sm.entryFilter.sort);
+        const effectiveSort = useManualConfigSort ? 'manual' : sortBy;
+        const cacheKey = `${sm.entryCacheVersion}|${sm.manualOrderVersion}|${effectiveSort}|${filterContext.cacheKey}`;
+        const timingStart = getNow();
+        const cached = sm.filteredEntryKeysCache.get(cacheKey);
+        if (cached) {
+            return {
+                keys: [...cached],
+                cacheHit: true,
+                sortMs: 0,
+                filterMs: 0,
+                totalMs: getNow() - timingStart,
+                sortBy: effectiveSort
+            };
+        }
+        const sortStart = getNow();
+        let candidateKeys = [];
+        if (useManualConfigSort) {
+            const manualOrder = sm.getActiveFavouritesOrder?.() || [];
+            const seen = new Set();
+            for (const stateKey of manualOrder) {
+                const key = `${stateKey ?? ''}`;
+                if (key.length == 0 || seen.has(key) || !sm.memoryStorage?.entries?.data?.[key]) {
+                    continue;
+                }
+                seen.add(key);
+                candidateKeys.push(key);
+            }
+            const newestKeys = sm.getSortedEntryKeys('newest');
+            for (const stateKey of newestKeys) {
+                if (seen.has(stateKey)) {
+                    continue;
+                }
+                const stateData = sm.memoryStorage?.entries?.data?.[stateKey];
+                if (!stateData || (stateData.groups?.indexOf('favourites') ?? -1) == -1) {
+                    continue;
+                }
+                seen.add(stateKey);
+                candidateKeys.push(stateKey);
+            }
+        }
+        else {
+            candidateKeys = sm.getSortedEntryKeys(sortBy);
+        }
+        const sortMs = getNow() - sortStart;
+        const filterStart = getNow();
+        const filteredKeys = [];
+        for (const stateKey of candidateKeys) {
+            const stateData = sm.memoryStorage?.entries?.data?.[stateKey];
+            if (!stateData || !sm.entryFilter.matches(stateData, filterContext, stateKey)) {
+                continue;
+            }
+            filteredKeys.push(stateKey);
+        }
+        const filterMs = getNow() - filterStart;
+        sm.setFilteredEntryKeysCache(cacheKey, filteredKeys);
+        return {
+            keys: filteredKeys,
+            cacheHit: false,
+            sortMs: sortMs,
+            filterMs: filterMs,
+            totalMs: getNow() - timingStart,
+            sortBy: effectiveSort
+        };
+    };
     sm.getFavouritesStateKeysNewestFirst = function () {
         if (!sm.memoryStorage?.entries?.data) {
             return [];
         }
-        return Object.keys(sm.memoryStorage.entries.data)
-            .filter(key => (sm.memoryStorage.entries.data[key]?.groups?.indexOf('favourites') ?? -1) > -1)
-            .sort((a, b) => (Number(sm.memoryStorage.entries.data[b]?.createdAt ?? b) || 0) - (Number(sm.memoryStorage.entries.data[a]?.createdAt ?? a) || 0));
+        return sm.getSortedEntryKeys('newest')
+            .filter(key => (sm.memoryStorage.entries.data[key]?.groups?.indexOf('favourites') ?? -1) > -1);
     };
     sm.getNormalisedFavouritesOrder = function (order) {
         const favouriteKeys = sm.getFavouritesStateKeysNewestFirst();
@@ -396,13 +695,18 @@ declare let onAfterUiUpdate: (callback) => void;
         }
         currentOrder.push(key);
         sm.memoryStorage.favouritesOrder = currentOrder;
+        sm.bumpManualOrderVersion();
     };
     sm.removeFavouritesOrderKey = function (stateKey) {
         const key = `${stateKey ?? ''}`;
         if (key.length == 0 || !sm.memoryStorage) {
             return;
         }
-        sm.memoryStorage.favouritesOrder = sm.ensureFavouritesOrder().filter((candidate) => candidate != key);
+        const previousOrder = sm.ensureFavouritesOrder();
+        sm.memoryStorage.favouritesOrder = previousOrder.filter((candidate) => candidate != key);
+        if (sm.memoryStorage.favouritesOrder.length != previousOrder.length) {
+            sm.bumpManualOrderVersion();
+        }
     };
     sm.getActiveFavouritesOrder = function () {
         if (sm.configReorderState?.active) {
@@ -720,38 +1024,49 @@ declare let onAfterUiUpdate: (callback) => void;
     };
     sm.entryFilter = {
         ...sm.getDefaultEntryFilter(),
-        matches: function (data) {
-            const f = sm.entryFilter;
-            // const q = f.query.toLowerCase();
-            const queries = f.query.toLowerCase().split(/, */);
+        matches: function (data, context = null, stateKey = null) {
+            const f = context || sm.getEntryFilterContext(sm.entryFilter);
+            const queries = f.queries || [];
             const isFavourite = (data.groups?.indexOf('favourites') ?? -1) > -1;
             const showEntryInHistory = f.group != 'history' || f.showFavouritesInHistory || !isFavourite;
-            const quickSettings = (data.quickSettings && typeof data.quickSettings === 'object') ? data.quickSettings : {};
-            const checkpointName = `${quickSettings['Stable Diffusion checkpoint'] ?? quickSettings['sd_model_checkpoint'] ?? ''}`.toLowerCase();
-            const sampler = `${data.generationSettings?.sampler ?? ''}`.toLowerCase();
-            const prompt = `${data.generationSettings?.prompt ?? ''}`.toLowerCase();
-            const negativePrompt = `${data.generationSettings?.negativePrompt ?? ''}`.toLowerCase();
-            return (data.groups?.indexOf(f.group) ?? -1) > -1 && f.types.indexOf(data.type) > -1 &&
-                showEntryInHistory &&
-                (f.query == '' || queries.every(q => checkpointName.indexOf(q) > -1 || sampler.indexOf(q) > -1 ||
-                    prompt.indexOf(q) > -1 || negativePrompt.indexOf(q) > -1 ||
-                    (data.hasOwnProperty('name') && `${data.name ?? ''}`.toLowerCase().indexOf(q) > -1)));
+            if ((data.groups?.indexOf(f.group) ?? -1) == -1 || !f.typeSet?.has(data.type) || !showEntryInHistory) {
+                return false;
+            }
+            if (queries.length == 0) {
+                return true;
+            }
+            const key = `${stateKey ?? data.createdAt ?? ''}`;
+            const searchBlob = sm.getEntrySearchBlob(key, data);
+            return queries.every(query => searchBlob.indexOf(query) > -1);
         }
     };
     sm.loadPreferences();
     sm.currentPage = 0;
+    sm.flushQueuedEntriesUpdate = function () {
+        if (updateEntriesAnimationFrameHandle != null) {
+            return;
+        }
+        updateEntriesAnimationFrameHandle = window.requestAnimationFrame(() => {
+            updateEntriesAnimationFrameHandle = null;
+            sm.updateEntries();
+        });
+    };
     sm.queueEntriesUpdate = function (delayMs = 0) {
         if (updateEntriesDebounceHandle != null) {
             clearTimeout(updateEntriesDebounceHandle);
             updateEntriesDebounceHandle = null;
         }
+        if (updateEntriesAnimationFrameHandle != null) {
+            cancelAnimationFrame(updateEntriesAnimationFrameHandle);
+            updateEntriesAnimationFrameHandle = null;
+        }
         if (delayMs <= 0) {
-            sm.updateEntries();
+            sm.flushQueuedEntriesUpdate();
             return;
         }
         updateEntriesDebounceHandle = window.setTimeout(() => {
             updateEntriesDebounceHandle = null;
-            sm.updateEntries();
+            sm.flushQueuedEntriesUpdate();
         }, delayMs);
     };
     sm.queueStorageUpdate = function (delayMs = updateStorageDebounceMs) {
@@ -879,7 +1194,7 @@ declare let onAfterUiUpdate: (callback) => void;
             stateClone.createdAt++;
         }
         sm.memoryStorage.entries.data[stateClone.createdAt] = stateClone;
-        sm.memoryStorage.entries.updateKeys();
+        sm.onEntryAdded(`${stateClone.createdAt}`, stateClone);
         if ((stateClone.groups?.indexOf('favourites') ?? -1) > -1) {
             sm.appendFavouritesOrderKey?.(`${stateClone.createdAt}`);
         }
@@ -922,6 +1237,7 @@ declare let onAfterUiUpdate: (callback) => void;
         else if (wasFavourite && !isFavourite) {
             sm.removeFavouritesOrderKey?.(entryStateKey);
         }
+        sm.onEntryUpdated(entryStateKey, entry.data);
         sm.activeProfileDraft = null;
         sm.updateStorage();
         sm.updateEntryIndicators(entry);
@@ -1378,6 +1694,7 @@ declare let onAfterUiUpdate: (callback) => void;
                 hasChanges: false,
                 previousSort: sm.entryFilter.sort
             };
+            sm.bumpManualOrderVersion();
             sm.syncConfigReorderControlsState?.();
             sm.queueEntriesUpdate(0);
         };
@@ -1400,6 +1717,7 @@ declare let onAfterUiUpdate: (callback) => void;
             [workingOrder[currentIndex], workingOrder[targetIndex]] = [workingOrder[targetIndex], workingOrder[currentIndex]];
             sm.configReorderState.workingOrder = workingOrder;
             sm.configReorderState.hasChanges = !areStringArraysEqual(workingOrder, sm.configReorderState.originalOrder || []);
+            sm.bumpManualOrderVersion();
             sm.syncConfigReorderControlsState?.();
             sm.queueEntriesUpdate(0);
         };
@@ -1415,6 +1733,7 @@ declare let onAfterUiUpdate: (callback) => void;
                 hasChanges: false,
                 previousSort: sm.entryFilter.sort
             };
+            sm.bumpManualOrderVersion();
             sm.updateStorage();
             sm.syncConfigReorderControlsState?.();
             sm.queueEntriesUpdate(0);
@@ -1433,6 +1752,7 @@ declare let onAfterUiUpdate: (callback) => void;
                 hasChanges: false,
                 previousSort: sm.entryFilter.sort
             };
+            sm.bumpManualOrderVersion();
             sm.syncConfigReorderControlsState?.();
             sm.queueEntriesUpdate(0);
         };
@@ -2116,6 +2436,8 @@ declare let onAfterUiUpdate: (callback) => void;
         sm.updateEntries();
     };
     sm.updateEntries = function () {
+        const getNow = () => (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
+        const updateStart = getNow();
         if (!sm.hasOwnProperty('memoryStorage')) { // Storage not init'd yet, defer until it's ready
             sm.updateEntriesWhenStorageReady = true;
             return;
@@ -2129,37 +2451,8 @@ declare let onAfterUiUpdate: (callback) => void;
         const currentEntriesPerPage = sm.getEntriesPerPage();
         const entries = sm.panelContainer.querySelector('.sd-webui-sm-entries');
         sm.ensureEntrySlotCount(currentEntriesPerPage);
-        const filteredEntries = Object.entries(sm.memoryStorage.entries.data).filter(kv => sm.entryFilter.matches(kv[1]));
-        const sortBy = sm.entryFilter.sort;
-        const useManualConfigSort = sm.entryFilter.group == 'favourites';
-        const manualOrder = useManualConfigSort ? sm.getActiveFavouritesOrder?.() : [];
-        const manualOrderIndexes = new Map((manualOrder || []).map((stateKey, index) => [stateKey, index]));
-        filteredEntries.sort((a, b) => {
-            const aState = a[1];
-            const bState = b[1];
-            const aKey = `${a[0] ?? ''}`;
-            const bKey = `${b[0] ?? ''}`;
-            if (useManualConfigSort) {
-                const aIndex = manualOrderIndexes.has(aKey) ? manualOrderIndexes.get(aKey) : Number.MAX_SAFE_INTEGER;
-                const bIndex = manualOrderIndexes.has(bKey) ? manualOrderIndexes.get(bKey) : Number.MAX_SAFE_INTEGER;
-                if (aIndex != bIndex) {
-                    return aIndex - bIndex;
-                }
-                return (Number(bState.createdAt ?? b[0]) || 0) - (Number(aState.createdAt ?? a[0]) || 0);
-            }
-            switch (sortBy) {
-                case 'oldest':
-                    return (Number(aState.createdAt ?? a[0]) || 0) - (Number(bState.createdAt ?? b[0]) || 0);
-                case 'name':
-                    return `${aState.name ?? ''}`.localeCompare(`${bState.name ?? ''}`) || (Number(bState.createdAt ?? b[0]) || 0) - (Number(aState.createdAt ?? a[0]) || 0);
-                case 'type':
-                    return `${aState.type ?? ''}`.localeCompare(`${bState.type ?? ''}`) || (Number(bState.createdAt ?? b[0]) || 0) - (Number(aState.createdAt ?? a[0]) || 0);
-                case 'newest':
-                default:
-                    return (Number(bState.createdAt ?? b[0]) || 0) - (Number(aState.createdAt ?? a[0]) || 0);
-            }
-        });
-        const filteredKeys = filteredEntries.map(([key]) => key);
+        const filterResult = sm.getFilteredStateKeys();
+        const filteredKeys = filterResult.keys;
         const numPages = Math.max(Math.ceil(filteredKeys.length / currentEntriesPerPage), 1);
         sm.pageNumberInput.max = numPages;
         sm.maxPageNumberLabel.innerText = `of ${numPages}`;
@@ -2192,6 +2485,7 @@ declare let onAfterUiUpdate: (callback) => void;
         sm.pageButtonNavigation.childNodes[8].addEventListener('click', () => {
             sm.goToPage(numPages);
         }, { signal: entryEventListenerAbortController.signal });
+        const renderStart = getNow();
         const dataPageOffset = sm.currentPage * currentEntriesPerPage;
         const numEntries = Math.min(currentEntriesPerPage, filteredKeys.length - dataPageOffset);
         for (let i = 0; i < numEntries; i++) {
@@ -2236,6 +2530,21 @@ declare let onAfterUiUpdate: (callback) => void;
         sm.selection.entries = Array.from(entries.childNodes).filter((entry) => entry.style.display != 'none' && entry.classList.contains('active'));
         sm.renderQuickConfigMenu?.();
         sm.syncConfigReorderControlsState?.();
+        sm.entriesPerformance.last = {
+            filterMs: filterResult.filterMs,
+            sortMs: filterResult.sortMs,
+            filterTotalMs: filterResult.totalMs,
+            renderMs: getNow() - renderStart,
+            totalMs: getNow() - updateStart,
+            cacheHit: filterResult.cacheHit,
+            sortBy: filterResult.sortBy,
+            totalEntries: Object.keys(sm.memoryStorage?.entries?.data || {}).length,
+            filteredEntries: filteredKeys.length
+        };
+        if (sm.entriesPerformance.enabled && sm.entriesPerformance.logToConsole) {
+            const p = sm.entriesPerformance.last;
+            console.debug(`[State Manager][Perf] updateEntries total=${p.totalMs.toFixed(2)}ms filter=${p.filterMs.toFixed(2)}ms sort=${p.sortMs.toFixed(2)}ms render=${p.renderMs.toFixed(2)}ms cacheHit=${p.cacheHit} sort=${p.sortBy} filtered=${p.filteredEntries}/${p.totalEntries}`);
+        }
     };
     sm.updateEntryIndicators = function (entry) {
         entry.classList.toggle('config', (entry.data.groups?.indexOf('favourites') ?? -1) > -1);
@@ -2803,9 +3112,12 @@ declare let onAfterUiUpdate: (callback) => void;
     };
     sm.saveState = function (state, group) {
         state.createdAt = Date.now();
+        while (sm.memoryStorage.entries.data.hasOwnProperty(`${state.createdAt}`)) {
+            state.createdAt++;
+        }
         state.groups = [group];
         sm.memoryStorage.entries.data[state.createdAt] = state;
-        sm.memoryStorage.entries.updateKeys();
+        sm.onEntryAdded(`${state.createdAt}`, state);
         if (group == 'favourites') {
             sm.appendFavouritesOrderKey?.(`${state.createdAt}`);
         }
@@ -2818,9 +3130,9 @@ declare let onAfterUiUpdate: (callback) => void;
         }
         for (const key of stateKeys) {
             sm.removeFavouritesOrderKey?.(`${key ?? ''}`);
+            sm.onEntryRemoved(`${key ?? ''}`);
             delete sm.memoryStorage.entries.data[key];
         }
-        sm.memoryStorage.entries.updateKeys();
         sm.updateStorage();
         return true;
     };
@@ -2833,6 +3145,7 @@ declare let onAfterUiUpdate: (callback) => void;
         if (group == 'favourites') {
             sm.appendFavouritesOrderKey?.(`${stateKey ?? ''}`);
         }
+        sm.onEntryUpdated(`${stateKey ?? ''}`, state);
         sm.updateStorage();
     };
     sm.removeStateFromGroup = function (stateKey, group) {
@@ -2847,14 +3160,19 @@ declare let onAfterUiUpdate: (callback) => void;
                 sm.removeFavouritesOrderKey?.(`${stateKey ?? ''}`);
             }
             if (state.groups.length == 0) {
+                sm.onEntryRemoved(`${stateKey ?? ''}`);
                 delete sm.memoryStorage.entries.data[stateKey];
-                sm.memoryStorage.entries.updateKeys();
+            }
+            else {
+                sm.onEntryUpdated(`${stateKey ?? ''}`, state);
             }
         }
         sm.updateStorage();
     };
     sm.setStateName = function (stateKey, name) {
-        sm.memoryStorage.entries.data[stateKey].name = name;
+        const state = sm.memoryStorage.entries.data[stateKey];
+        state.name = name;
+        sm.onEntryUpdated(`${stateKey ?? ''}`, state);
         sm.queueStorageUpdate();
     };
     sm.buildComponentMap = async function () {
@@ -3079,11 +3397,43 @@ declare let onAfterUiUpdate: (callback) => void;
                 updateKeys: function () {
                     sm.memoryStorage.entries.orderedKeys = Object.keys(sm.memoryStorage.entries.data);
                     sm.memoryStorage.entries.orderedKeys.sort().reverse();
+                },
+                addKey: function (stateKey) {
+                    const key = `${stateKey ?? ''}`;
+                    if (key.length == 0 || sm.memoryStorage.entries.orderedKeys.indexOf(key) > -1) {
+                        return;
+                    }
+                    const keyValue = Number(key) || 0;
+                    const orderedKeys = sm.memoryStorage.entries.orderedKeys;
+                    let low = 0;
+                    let high = orderedKeys.length;
+                    while (low < high) {
+                        const middle = Math.floor((low + high) / 2);
+                        if ((Number(orderedKeys[middle]) || 0) > keyValue) {
+                            low = middle + 1;
+                        }
+                        else {
+                            high = middle;
+                        }
+                    }
+                    orderedKeys.splice(low, 0, key);
+                },
+                removeKey: function (stateKey) {
+                    const key = `${stateKey ?? ''}`;
+                    if (key.length == 0) {
+                        return;
+                    }
+                    const index = sm.memoryStorage.entries.orderedKeys.indexOf(key);
+                    if (index > -1) {
+                        sm.memoryStorage.entries.orderedKeys.splice(index, 1);
+                    }
                 }
             }
         };
         sm.memoryStorage.entries.updateKeys();
         sm.memoryStorage.favouritesOrder = sm.getNormalisedFavouritesOrder(storedData.favouritesOrder);
+        sm.bumpManualOrderVersion();
+        sm.rebuildEntryIndexes();
         // Load default UI settings
         // sm.inspector.innerHTML = "Loading current UI defaults...";
         return sm.api.get("uidefaults")
@@ -3177,13 +3527,24 @@ declare let onAfterUiUpdate: (callback) => void;
         if (!confirm(`Warning! You are about to delete all entries that are not saved as configs and do not have a name. This operation can not be undone! Are you sure you wish to continue?`)) {
             return;
         }
+        const removedKeys = [];
         for (const key of sm.memoryStorage.entries.orderedKeys) {
             const data = sm.memoryStorage.entries.data[key];
             if (!data.groups || (data.groups.length == 1 && data.groups[0] == 'history' && (!data.hasOwnProperty('name') || data.name == ''))) {
+                removedKeys.push(`${key ?? ''}`);
                 delete sm.memoryStorage.entries.data[key];
             }
         }
-        sm.memoryStorage.entries.updateKeys();
+        if (removedKeys.length > 0) {
+            sm.memoryStorage.entries.updateKeys();
+            for (const key of removedKeys) {
+                sm.removeEntrySearchBlob(key);
+                for (const sortOrder of sortableEntryOrders) {
+                    sm.removeStateKeyFromSortCache(sortOrder, key);
+                }
+            }
+            sm.bumpEntryCacheVersion();
+        }
         sm.updateStorage();
     };
     sm.clearData = function (location) {
@@ -3609,7 +3970,9 @@ declare let onAfterUiUpdate: (callback) => void;
         entries: {
             data: {},
             orderedKeys: [],
-            updateKeys: () => { }
+            updateKeys: () => { },
+            addKey: () => { },
+            removeKey: () => { }
         }
     },
     selection: {
