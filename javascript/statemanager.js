@@ -2232,6 +2232,23 @@
         entry.classList.toggle('config', (entry.data.groups?.indexOf('favourites') ?? -1) > -1);
         entry.classList.toggle('configured', entry.data.hasOwnProperty('name') && entry.data.name != undefined && entry.data.name.length > 0);
     };
+    sm.clearSelection = function (updateInspector = true) {
+        if (!sm.selection) {
+            return;
+        }
+        for (const selectedEntry of (sm.selection.entries || [])) {
+            selectedEntry?.classList?.remove('active');
+        }
+        sm.selection.entries = [];
+        sm.selection.selectedStateKeys?.clear?.();
+        sm.selection.rangeSelectStart = null;
+        sm.selection.undoableRangeSelectionAmount = 0;
+        if (updateInspector) {
+            sm.activeProfileDraft = null;
+            sm.updateInspector();
+            sm.syncConfigReorderControlsState?.();
+        }
+    };
     sm.updateInspector = async function () {
         sm.captureInspectorAccordionState?.();
         sm.inspector.innerHTML = "";
@@ -2243,21 +2260,34 @@
         else if (sm.selection.entries.length > 1) {
             sm.activeProfileDraft = null;
             const multiSelectContainer = sm.createElementWithClassList('div', 'category', 'meta-container');
-            const allAreConfigs = sm.selection.entries.every(e => e.data.groups && e.data.groups.indexOf('favourites') > -1);
-            const configAllButton = sm.createElementWithInnerTextAndClassList('button', allAreConfigs ? `Remove ${sm.selection.entries.length} from saved configs` : `Save all ${sm.selection.entries.length} as configs`, 'sd-webui-sm-inspector-wide-button', 'sd-webui-sm-inspector-load-button');
+            const selectedEntries = [...sm.selection.entries];
+            const nonConfigEntries = selectedEntries.filter((selectedEntry) => (selectedEntry.data?.groups?.indexOf('favourites') ?? -1) == -1);
+            if (nonConfigEntries.length > 0) {
+                const labelCount = nonConfigEntries.length;
+                const configAllButton = sm.createElementWithInnerTextAndClassList('button', `Save ${labelCount} as configs`, 'sd-webui-sm-inspector-wide-button', 'sd-webui-sm-inspector-load-button');
+                multiSelectContainer.appendChild(configAllButton);
+                configAllButton.addEventListener('click', () => {
+                    for (const selectedEntry of nonConfigEntries) {
+                        const sourceState = selectedEntry.data;
+                        const duplicatedState = JSON.parse(JSON.stringify(sourceState));
+                        duplicatedState.groups = sm.getGroupsWithFavouriteState(sourceState.groups || [], true);
+                        sm.upsertState(duplicatedState);
+                    }
+                    sm.clearSelection(false);
+                    sm.updateEntries();
+                    sm.updateInspector();
+                });
+            }
             const deleteAllButton = sm.createElementWithInnerTextAndClassList('button', `🗑 Delete all ${sm.selection.entries.length} selected items`, 'sd-webui-sm-inspector-wide-button', 'sd-webui-sm-inspector-load-button');
-            multiSelectContainer.appendChild(configAllButton);
             multiSelectContainer.appendChild(deleteAllButton);
-            configAllButton.addEventListener('click', () => {
-                const addOrRemove = sm.selection.entries.every(e => e.data.groups && e.data.groups.indexOf('favourites') > -1) ? sm.removeStateFromGroup : sm.addStateToGroup;
-                for (let entry of sm.selection.entries) {
-                    addOrRemove(entry.data.createdAt, 'favourites');
-                    sm.updateEntryIndicators(entry);
-                }
-            });
             deleteAllButton.addEventListener('click', () => {
-                sm.deleteStates(true, ...sm.selection.entries.map(e => e.data.createdAt));
+                const deleted = sm.deleteStates(true, ...sm.selection.entries.map(e => e.data.createdAt));
+                if (!deleted) {
+                    return;
+                }
+                sm.clearSelection(false);
                 sm.updateEntries();
+                sm.updateInspector();
             });
             sm.inspector.appendChild(multiSelectContainer);
             return;
@@ -2359,11 +2389,13 @@
             deleteButton.click();
         });
         deleteButton.addEventListener('click', () => {
-            sm.deleteStates(true, entry.data.createdAt);
-            sm.updateEntries();
-            if (entry.style.display != 'none') {
-                entry.click();
+            const deleted = sm.deleteStates(true, entry.data.createdAt);
+            if (!deleted) {
+                return;
             }
+            sm.clearSelection(false);
+            sm.updateEntries();
+            sm.updateInspector();
         });
         saveChangesButton.addEventListener('click', () => sm.saveActiveProfileChanges());
         loadAllButton.addEventListener('click', () => {
@@ -2771,14 +2803,17 @@
         sm.updateStorage();
     };
     sm.deleteStates = function (requireConfirmation, ...stateKeys) {
-        if (requireConfirmation && confirm(`Delete ${stateKeys.length} item${stateKeys.length == 1 ? '' : 's'}? This action cannot be undone.`)) {
-            for (const key of stateKeys) {
-                sm.removeFavouritesOrderKey?.(`${key ?? ''}`);
-                delete sm.memoryStorage.entries.data[key];
-            }
-            sm.memoryStorage.entries.updateKeys();
-            sm.updateStorage();
+        const shouldDelete = !requireConfirmation || confirm(`Delete ${stateKeys.length} item${stateKeys.length == 1 ? '' : 's'}? This action cannot be undone.`);
+        if (!shouldDelete) {
+            return false;
         }
+        for (const key of stateKeys) {
+            sm.removeFavouritesOrderKey?.(`${key ?? ''}`);
+            delete sm.memoryStorage.entries.data[key];
+        }
+        sm.memoryStorage.entries.updateKeys();
+        sm.updateStorage();
+        return true;
     };
     sm.addStateToGroup = function (stateKey, group) {
         let state = sm.memoryStorage.entries.data[stateKey];
