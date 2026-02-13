@@ -2010,9 +2010,26 @@ declare let onAfterUiUpdate: (callback) => void;
         if (!sm.panelContainer) {
             return;
         }
+        const clearHostContainClass = () => {
+            for (const hostContain of Array.from(app.querySelectorAll('.contain.sd-webui-sm-host-contain'))) {
+                hostContain.classList.remove('sd-webui-sm-host-contain');
+            }
+        };
+        const markHostContainClass = (element) => {
+            if (!(element instanceof Element)) {
+                return;
+            }
+            const hostContain = element.closest('.contain');
+            if (!hostContain) {
+                return;
+            }
+            clearHostContainClass();
+            hostContain.classList.add('sd-webui-sm-host-contain');
+        };
         const generationType = sm.utils.getCurrentGenerationTypeFromUI();
         const isGenerationTab = generationType == 'txt2img' || generationType == 'img2img';
         if (!isGenerationTab) {
+            clearHostContainClass();
             sm.panelContainer.style.display = 'none';
             if (sm.panelContainer.classList.contains('sd-webui-sm-modal-panel')) {
                 sm.panelContainer.classList.remove('sd-webui-sm-modal-panel');
@@ -2035,6 +2052,7 @@ declare let onAfterUiUpdate: (callback) => void;
         sm.syncQuickConfigApplyButtonState?.();
         const contain = app.querySelector('.contain');
         if (isModal) {
+            clearHostContainClass();
             if (contain && sm.panelContainer.parentNode != contain) {
                 contain.appendChild(sm.panelContainer);
             }
@@ -2045,12 +2063,14 @@ declare let onAfterUiUpdate: (callback) => void;
             if (resultsPanel.nextElementSibling != sm.panelContainer) {
                 resultsPanel.insertAdjacentElement('afterend', sm.panelContainer);
             }
+            markHostContainClass(sm.panelContainer);
             return;
         }
         const fallbackContainer = app.querySelector('.contain');
         if (fallbackContainer && sm.panelContainer.parentNode != fallbackContainer) {
             fallbackContainer.appendChild(sm.panelContainer);
         }
+        markHostContainClass(sm.panelContainer);
     };
     sm.getMode = function () {
         return sm.panelContainer.classList.contains('sd-webui-sm-modal-panel') ? 'modal' : 'docked';

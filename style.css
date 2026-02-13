@@ -10,19 +10,24 @@
     --sm-value-diff-missing: rgb(251, 146, 60);
 }
 
-.contain {
+.contain.sd-webui-sm-host-contain {
     display: flex;
     flex-direction: row;
 }
 
-#quicksettings {
+.contain.sd-webui-sm-host-contain #quicksettings {
     width: 100%;
     max-width: 100%;
     min-width: 0;
 }
 
-.contain > #quicksettings {
-    flex: 1 1 auto;
+.contain.sd-webui-sm-host-contain > #quicksettings {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.contain.sd-webui-sm-host-contain > :not(.sd-webui-sm-panel-container):not(.sd-webui-sm-side-panel) {
+    flex: 1 1 0;
     min-width: 0;
 }
 
@@ -93,6 +98,7 @@
 .sd-webui-sm-side-panel {
     width: var(--sm-side-panel-width);
     flex-shrink: 0;
+    min-width: 0;
 
     display: grid;
     grid-template-rows: 2.2em auto minmax(0, 1fr);
@@ -173,6 +179,8 @@
     width: auto;
     min-width: min(320px, 100%);
     flex-grow: 1;
+    flex-shrink: 1;
+    flex-basis: 0;
     display: grid;
     visibility: visible;
     background: var(--body-background-fill);
@@ -452,6 +460,7 @@ body.sd-webui-sm-modal-open {
     grid-column: 1;
     grid-row: 2;
     min-height: 0;
+    min-width: 0;
     overflow: hidden;
     display: grid;
     grid-template-rows: auto min-content auto;
@@ -469,6 +478,7 @@ body.sd-webui-sm-modal-open {
     display: flex;
     flex-direction: row;
     flex-wrap: nowrap;
+    min-width: 0;
     gap: 3px;
     overflow-x: auto;
     overflow-y: hidden;
@@ -891,6 +901,7 @@ body.sd-webui-sm-modal-open {
     /* background-color: black; */
     overflow: auto;
     min-height: 0;
+    min-width: 0;
     grid-column: 1;
     grid-row: 3;
     border: 1px solid var(--border-color-primary);
@@ -901,6 +912,7 @@ body.sd-webui-sm-modal-open {
     display: none;
     grid-column: 1;
     grid-row: 2 / 4;
+    min-width: 0;
     border: 1px solid var(--border-color-primary);
     padding: 10px;
     overflow: auto;
