@@ -25,6 +25,9 @@ declare let onAfterUiUpdate: (callback) => void;
     const updateStorageDebounceMs = 600;
     const maxFilteredEntryCacheEntries = 40;
     const sortableEntryOrders = ['newest', 'oldest', 'name', 'type'];
+    const modalVirtualizationColumnCount = 10;
+    const modalVirtualizationOverscanRows = 2;
+    const modalVirtualizationMinEntries = 60;
     const uiSettingsStorageKey = 'sd-webui-state-manager-ui-settings';
     const entryFilterStorageKey = 'sd-webui-state-manager-entry-filter';
     const previewObserverRootMargin = '120px';
@@ -57,6 +60,15 @@ declare let onAfterUiUpdate: (callback) => void;
         enabled: false,
         logToConsole: false,
         last: null
+    };
+    sm.entrySlots = [];
+    sm.virtualEntries = {
+        active: false,
+        pageKeys: [],
+        startIndex: 0,
+        endIndex: 0,
+        rowHeight: 0,
+        pageSignature: ''
     };
     sm.uiSettings = {
         historySmallViewEntriesPerPage: entriesPerPage,
@@ -1804,6 +1816,28 @@ declare let onAfterUiUpdate: (callback) => void;
         entryHeader.appendChild(filterRow);
         // Entries
         const entries = sm.createElementWithClassList('div', 'sd-webui-sm-entries');
+        sm.entriesElement = entries;
+        sm.entrySlots = [];
+        const virtualTopSpacer = sm.createElementWithClassList('div', 'sd-webui-sm-virtual-spacer');
+        const virtualBottomSpacer = sm.createElementWithClassList('div', 'sd-webui-sm-virtual-spacer');
+        for (const spacer of [virtualTopSpacer, virtualBottomSpacer]) {
+            spacer.style.display = 'none';
+            spacer.style.height = '0px';
+            spacer.style.gridColumn = '1 / -1';
+            spacer.style.pointerEvents = 'none';
+            spacer.setAttribute('aria-hidden', 'true');
+        }
+        sm.virtualTopSpacer = virtualTopSpacer;
+        sm.virtualBottomSpacer = virtualBottomSpacer;
+        entries.appendChild(virtualTopSpacer);
+        entries.appendChild(virtualBottomSpacer);
+        entries.addEventListener('scroll', () => {
+            if (!sm.virtualEntries?.active) {
+                return;
+            }
+            sm.updateVirtualizedEntries?.(sm.virtualEntries.pageKeys || [], sm.virtualEntries.pageSignature || '');
+            sm.selection.entries = (sm.entrySlots || []).filter((entry) => entry.style.display != 'none' && entry.classList.contains('active'));
+        });
         entryContainer.appendChild(entryHeader);
         entryContainer.appendChild(entries);
         entryContainer.appendChild(entryFooter);
@@ -2078,8 +2112,16 @@ declare let onAfterUiUpdate: (callback) => void;
             return entry;
         };
         sm.ensureEntrySlotCount = function (minCount) {
-            while (entries.childNodes.length < minCount) {
-                entries.appendChild(createEntrySlot());
+            sm.entrySlots = sm.entrySlots || [];
+            while (sm.entrySlots.length < minCount) {
+                const slot = createEntrySlot();
+                sm.entrySlots.push(slot);
+                if (sm.virtualBottomSpacer) {
+                    entries.insertBefore(slot, sm.virtualBottomSpacer);
+                }
+                else {
+                    entries.appendChild(slot);
+                }
             }
         };
         sm.ensureEntrySlotCount(initialEntrySlotCount);
@@ -2421,6 +2463,123 @@ declare let onAfterUiUpdate: (callback) => void;
         }
         sm.pageNumberInput.disabled = disablePagination;
     };
+    sm.shouldVirtualizeModalEntries = function (pageKeyCount) {
+        return sm.getMode() == 'modal' && pageKeyCount > modalVirtualizationMinEntries;
+    };
+    sm.getVirtualizedRowHeight = function () {
+        const rootStyle = window.getComputedStyle(document.documentElement);
+        const entrySize = Number.parseFloat(`${rootStyle.getPropertyValue('--sm-entry-size')}`) || 74.5;
+        const rowGap = 3;
+        return Math.max(entrySize + rowGap, 1);
+    };
+    sm.hideUnusedEntrySlots = function (startIndex) {
+        const entrySlots = sm.entrySlots || [];
+        for (let i = startIndex; i < entrySlots.length; i++) {
+            const hiddenEntry = entrySlots[i];
+            hiddenEntry.classList.remove('active');
+            hiddenEntry.style.display = 'none';
+            delete hiddenEntry.dataset['stateKey'];
+            sm.clearEntryPreview(hiddenEntry);
+        }
+    };
+    sm.renderEntrySlot = function (entry, data, stateKey) {
+        entry.data = data;
+        entry.dataset['stateKey'] = `${stateKey ?? ''}`;
+        sm.queueEntryPreview(entry, `${data.preview ?? ''}`);
+        entry.style.display = 'inherit';
+        entry.classList.toggle('active', sm.selection.selectedStateKeys.has(`${stateKey ?? ''}`));
+        const creationDate = new Date(data.createdAt);
+        const configName = `${data.name ?? ''}`.trim();
+        const day = creationDate.getDate().toString().padStart(2, '0');
+        const month = (creationDate.getMonth() + 1).toString().padStart(2, '0');
+        const year = creationDate.getFullYear().toString().padStart(2, '0');
+        const hours = creationDate.getHours().toString().padStart(2, '0');
+        const minutes = creationDate.getMinutes().toString().padStart(2, '0');
+        const seconds = creationDate.getSeconds().toString().padStart(2, '0');
+        const fullDateText = sm.getNormalisedDateFormatValue(sm.uiSettings.dateFormat) == 'mmddyyyy'
+            ? `${month}/${day}/${year}`
+            : `${day}/${month}/${year}`;
+        const fullTimeText = `${hours}:${minutes}:${seconds}`;
+        const fullTimestamp = `${fullDateText} ${fullTimeText}`;
+        const dateElement = entry.querySelector('.date');
+        const timeElement = entry.querySelector('.time');
+        entry.querySelector('.type').innerText = `${data.type == 'txt2img' ? '🖋' : '🖼️'} ${data.type}`;
+        entry.querySelector('.config-name').innerText = configName;
+        entry.querySelector('.config-name').title = configName;
+        entry.classList.toggle('has-config-name', configName.length > 0);
+        dateElement.innerText = fullDateText;
+        timeElement.innerText = `${hours}:${minutes}`;
+        dateElement.title = fullTimestamp;
+        timeElement.title = fullTimestamp;
+        sm.updateEntryIndicators(entry);
+    };
+    sm.disableVirtualizedEntries = function () {
+        const entries = sm.entriesElement || null;
+        const virtualTopSpacer = sm.virtualTopSpacer || null;
+        const virtualBottomSpacer = sm.virtualBottomSpacer || null;
+        if (!entries || !virtualTopSpacer || !virtualBottomSpacer) {
+            return;
+        }
+        entries.classList.remove('sd-webui-sm-entries-virtualized');
+        virtualTopSpacer.style.display = 'none';
+        virtualBottomSpacer.style.display = 'none';
+        virtualTopSpacer.style.height = '0px';
+        virtualBottomSpacer.style.height = '0px';
+        sm.virtualEntries.active = false;
+        sm.virtualEntries.pageKeys = [];
+        sm.virtualEntries.pageSignature = '';
+        sm.virtualEntries.startIndex = 0;
+        sm.virtualEntries.endIndex = 0;
+    };
+    sm.renderVirtualizedEntrySlice = function (pageKeys, startIndex, endIndex) {
+        const sliceCount = Math.max(endIndex - startIndex, 0);
+        sm.ensureEntrySlotCount(sliceCount);
+        const entrySlots = sm.entrySlots || [];
+        for (let i = 0; i < sliceCount; i++) {
+            const stateKey = pageKeys[startIndex + i];
+            const data = sm.memoryStorage.entries.data[stateKey];
+            const entry = entrySlots[i];
+            sm.renderEntrySlot(entry, data, stateKey);
+        }
+        sm.hideUnusedEntrySlots(sliceCount);
+    };
+    sm.updateVirtualizedEntries = function (pageKeys, pageSignature) {
+        const entries = sm.entriesElement || null;
+        const virtualTopSpacer = sm.virtualTopSpacer || null;
+        const virtualBottomSpacer = sm.virtualBottomSpacer || null;
+        if (!entries || !virtualTopSpacer || !virtualBottomSpacer) {
+            return;
+        }
+        const previousPageSignature = `${sm.virtualEntries.pageSignature ?? ''}`;
+        const hasPageChanged = previousPageSignature != `${pageSignature ?? ''}`;
+        if (hasPageChanged) {
+            entries.scrollTop = 0;
+        }
+        entries.classList.add('sd-webui-sm-entries-virtualized');
+        virtualTopSpacer.style.display = 'block';
+        virtualBottomSpacer.style.display = 'block';
+        sm.virtualEntries.active = true;
+        sm.virtualEntries.pageKeys = pageKeys;
+        sm.virtualEntries.pageSignature = pageSignature;
+        sm.virtualEntries.rowHeight = sm.getVirtualizedRowHeight();
+        const rowHeight = sm.virtualEntries.rowHeight;
+        const rowCount = Math.max(Math.ceil(pageKeys.length / modalVirtualizationColumnCount), 1);
+        const visibleStartRow = Math.max(Math.floor(entries.scrollTop / rowHeight) - modalVirtualizationOverscanRows, 0);
+        const visibleEndRow = Math.min(Math.ceil((entries.scrollTop + entries.clientHeight) / rowHeight) + modalVirtualizationOverscanRows, rowCount);
+        const startIndex = Math.min(visibleStartRow * modalVirtualizationColumnCount, pageKeys.length);
+        const endIndex = Math.min(Math.max(visibleEndRow, visibleStartRow + 1) * modalVirtualizationColumnCount, pageKeys.length);
+        if (!hasPageChanged && startIndex == sm.virtualEntries.startIndex && endIndex == sm.virtualEntries.endIndex) {
+            return;
+        }
+        sm.virtualEntries.startIndex = startIndex;
+        sm.virtualEntries.endIndex = endIndex;
+        const topRows = Math.floor(startIndex / modalVirtualizationColumnCount);
+        const renderedRowCount = Math.ceil(Math.max(endIndex - startIndex, 0) / modalVirtualizationColumnCount);
+        const bottomRows = Math.max(rowCount - topRows - renderedRowCount, 0);
+        virtualTopSpacer.style.height = `${Math.max(topRows * rowHeight, 0)}px`;
+        virtualBottomSpacer.style.height = `${Math.max(bottomRows * rowHeight, 0)}px`;
+        sm.renderVirtualizedEntrySlice(pageKeys, startIndex, endIndex);
+    };
     sm.goToPage = function (page) {
         if (sm.isSmallViewMode() && !sm.uiSettings.showSmallViewPagination) {
             sm.currentPage = 0;
@@ -2449,8 +2608,10 @@ declare let onAfterUiUpdate: (callback) => void;
         entryEventListenerAbortController = new AbortController();
         sm.syncPaginationInteractionState();
         const currentEntriesPerPage = sm.getEntriesPerPage();
-        const entries = sm.panelContainer.querySelector('.sd-webui-sm-entries');
-        sm.ensureEntrySlotCount(currentEntriesPerPage);
+        const entries = sm.entriesElement || sm.panelContainer.querySelector('.sd-webui-sm-entries');
+        if (!entries) {
+            return;
+        }
         const filterResult = sm.getFilteredStateKeys();
         const filteredKeys = filterResult.keys;
         const numPages = Math.max(Math.ceil(filteredKeys.length / currentEntriesPerPage), 1);
@@ -2487,47 +2648,24 @@ declare let onAfterUiUpdate: (callback) => void;
         }, { signal: entryEventListenerAbortController.signal });
         const renderStart = getNow();
         const dataPageOffset = sm.currentPage * currentEntriesPerPage;
-        const numEntries = Math.min(currentEntriesPerPage, filteredKeys.length - dataPageOffset);
-        for (let i = 0; i < numEntries; i++) {
-            const data = sm.memoryStorage.entries.data[filteredKeys[dataPageOffset + i]];
-            const entry = entries.childNodes[i];
-            const entryStateKey = `${data.createdAt ?? ''}`;
-            entry.data = data;
-            sm.queueEntryPreview(entry, `${data.preview ?? ''}`);
-            entry.style.display = 'inherit';
-            entry.classList.toggle('active', sm.selection.selectedStateKeys.has(entryStateKey));
-            const creationDate = new Date(data.createdAt);
-            const configName = `${data.name ?? ''}`.trim();
-            const day = creationDate.getDate().toString().padStart(2, '0');
-            const month = (creationDate.getMonth() + 1).toString().padStart(2, '0');
-            const year = creationDate.getFullYear().toString().padStart(2, '0');
-            const hours = creationDate.getHours().toString().padStart(2, '0');
-            const minutes = creationDate.getMinutes().toString().padStart(2, '0');
-            const seconds = creationDate.getSeconds().toString().padStart(2, '0');
-            const fullDateText = sm.getNormalisedDateFormatValue(sm.uiSettings.dateFormat) == 'mmddyyyy'
-                ? `${month}/${day}/${year}`
-                : `${day}/${month}/${year}`;
-            const fullTimeText = `${hours}:${minutes}:${seconds}`;
-            const fullTimestamp = `${fullDateText} ${fullTimeText}`;
-            const dateElement = entry.querySelector('.date');
-            const timeElement = entry.querySelector('.time');
-            entry.querySelector('.type').innerText = `${data.type == 'txt2img' ? '🖋' : '🖼️'} ${data.type}`;
-            entry.querySelector('.config-name').innerText = configName;
-            entry.querySelector('.config-name').title = configName;
-            entry.classList.toggle('has-config-name', configName.length > 0);
-            dateElement.innerText = fullDateText;
-            timeElement.innerText = `${hours}:${minutes}`;
-            dateElement.title = fullTimestamp;
-            timeElement.title = fullTimestamp;
-            sm.updateEntryIndicators(entry);
+        const pageKeys = filteredKeys.slice(dataPageOffset, dataPageOffset + currentEntriesPerPage);
+        const useVirtualizedEntries = sm.shouldVirtualizeModalEntries(pageKeys.length);
+        if (useVirtualizedEntries) {
+            const pageSignature = `${sm.currentPage}|${currentEntriesPerPage}|${pageKeys.length}|${pageKeys[0] ?? ''}|${pageKeys[pageKeys.length - 1] ?? ''}`;
+            sm.updateVirtualizedEntries(pageKeys, pageSignature);
         }
-        for (let i = numEntries; i < entries.childNodes.length; i++) {
-            const hiddenEntry = entries.childNodes[i];
-            hiddenEntry.classList.remove('active');
-            hiddenEntry.style.display = 'none';
-            sm.clearEntryPreview(hiddenEntry);
+        else {
+            sm.disableVirtualizedEntries();
+            sm.ensureEntrySlotCount(Math.max(currentEntriesPerPage, pageKeys.length));
+            for (let i = 0; i < pageKeys.length; i++) {
+                const stateKey = `${pageKeys[i] ?? ''}`;
+                const data = sm.memoryStorage.entries.data[stateKey];
+                const entry = sm.entrySlots[i];
+                sm.renderEntrySlot(entry, data, stateKey);
+            }
+            sm.hideUnusedEntrySlots(pageKeys.length);
         }
-        sm.selection.entries = Array.from(entries.childNodes).filter((entry) => entry.style.display != 'none' && entry.classList.contains('active'));
+        sm.selection.entries = (sm.entrySlots || []).filter((entry) => entry.style.display != 'none' && entry.classList.contains('active'));
         sm.renderQuickConfigMenu?.();
         sm.syncConfigReorderControlsState?.();
         sm.entriesPerformance.last = {
@@ -2691,8 +2829,7 @@ declare let onAfterUiUpdate: (callback) => void;
             const savedState = sm.upsertState(newState);
             sm.activeProfileDraft = null;
             sm.updateEntries();
-            const entries = sm.panelContainer.querySelector('.sd-webui-sm-entries');
-            const targetEntry = Array.from(entries.childNodes).find((candidate) => `${candidate?.data?.createdAt ?? ''}` == `${savedState.createdAt}`);
+            const targetEntry = (sm.entrySlots || []).find((candidate) => candidate.style.display != 'none' && `${candidate?.data?.createdAt ?? ''}` == `${savedState.createdAt}`);
             if (targetEntry) {
                 sm.selection.select(targetEntry, 'single');
             }
@@ -4036,6 +4173,19 @@ declare let onAfterUiUpdate: (callback) => void;
                         this.select(entry, 'single');
                         return;
                     }
+                    const getVisibleSiblingEntries = (targetEntry) => {
+                        const parentElement = targetEntry?.parentElement;
+                        if (!parentElement) {
+                            return [];
+                        }
+                        return Array.from(parentElement.querySelectorAll('.sd-webui-sm-entry'))
+                            .filter((candidate) => candidate.style.display != 'none');
+                    };
+                    const visibleEntries = getVisibleSiblingEntries(entry);
+                    if (visibleEntries.length == 0) {
+                        this.select(entry, 'single');
+                        return;
+                    }
                     // unselect previous range select
                     const unselectedEntries = this.entries.splice(this.entries.length - this.undoableRangeSelectionAmount, this.undoableRangeSelectionAmount);
                     for (let i = 0; i < unselectedEntries.length; i++) {
@@ -4046,10 +4196,14 @@ declare let onAfterUiUpdate: (callback) => void;
                         return;
                     }
                     // select new range
-                    let rangeStartIndex = Array.prototype.indexOf.call(this.rangeSelectStart.parentNode.children, this.rangeSelectStart);
-                    let rangeEndIndex = Array.prototype.indexOf.call(entry.parentNode.children, entry);
+                    let rangeStartIndex = visibleEntries.indexOf(this.rangeSelectStart);
+                    let rangeEndIndex = visibleEntries.indexOf(entry);
+                    if (rangeStartIndex < 0 || rangeEndIndex < 0) {
+                        this.select(entry, 'single');
+                        return;
+                    }
                     function selectEntry(index) {
-                        const rangeEntry = entry.parentNode.childNodes[index];
+                        const rangeEntry = visibleEntries[index];
                         this.entries.push(rangeEntry);
                         rangeEntry.classList.add('active');
                         addStateKey(rangeEntry);

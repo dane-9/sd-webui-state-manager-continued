@@ -495,6 +495,17 @@ body.sd-webui-sm-modal-open {
     overflow: hidden scroll;
 }
 
+.sd-webui-sm-virtual-spacer {
+    display: none;
+    grid-column: 1 / -1;
+    height: 0;
+    pointer-events: none;
+}
+
+.sd-webui-sm-modal-panel .sd-webui-sm-entries.sd-webui-sm-entries-virtualized {
+    align-content: start;
+}
+
 .sd-webui-sm-modal-panel .sd-webui-sm-entry-header {
     height: 2em;
     width: 100%;
