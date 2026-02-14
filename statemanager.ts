@@ -40,6 +40,8 @@ declare let onAfterUiUpdate: (callback) => void;
     let updateEntriesDebounceHandle = null;
     let updateEntriesAnimationFrameHandle = null;
     let updateStorageDebounceHandle = null;
+    let storageUpdateInFlight = false;
+    let storageUpdateRequestedWhileInFlight = false;
     let updateValueDiffDebounceHandle = null;
     let updateValueDiffAnimationFrameHandle = null;
     sm.autoSaveHistory = false;
@@ -1084,19 +1086,38 @@ declare let onAfterUiUpdate: (callback) => void;
             sm.flushQueuedEntriesUpdate();
         }, delayMs);
     };
+    sm.flushQueuedStorageUpdate = function () {
+        if (storageUpdateInFlight) {
+            storageUpdateRequestedWhileInFlight = true;
+            return;
+        }
+        storageUpdateInFlight = true;
+        sm.runStorageUpdate()
+            .catch(e => sm.utils.logResponseError("[State Manager] Updating storage failed with error", e))
+            .finally(() => {
+                storageUpdateInFlight = false;
+                if (storageUpdateRequestedWhileInFlight) {
+                    storageUpdateRequestedWhileInFlight = false;
+                    sm.flushQueuedStorageUpdate();
+                }
+            });
+    };
     sm.queueStorageUpdate = function (delayMs = updateStorageDebounceMs) {
         if (updateStorageDebounceHandle != null) {
             clearTimeout(updateStorageDebounceHandle);
             updateStorageDebounceHandle = null;
         }
         if (delayMs <= 0) {
-            sm.updateStorage();
+            sm.flushQueuedStorageUpdate();
             return;
         }
         updateStorageDebounceHandle = window.setTimeout(() => {
             updateStorageDebounceHandle = null;
-            sm.updateStorage();
+            sm.flushQueuedStorageUpdate();
         }, delayMs);
+    };
+    sm.updateStorage = function () {
+        sm.queueStorageUpdate(0);
     };
     sm.flushQueuedValueDiffUpdate = function () {
         if (updateValueDiffAnimationFrameHandle != null) {
@@ -1240,7 +1261,7 @@ declare let onAfterUiUpdate: (callback) => void;
         if ((stateClone.groups?.indexOf('favourites') ?? -1) > -1) {
             sm.appendFavouritesOrderKey?.(`${stateClone.createdAt}`);
         }
-        sm.updateStorage();
+        sm.queueStorageUpdate();
         return stateClone;
     };
     sm.saveActiveProfileChanges = function () {
@@ -1281,7 +1302,7 @@ declare let onAfterUiUpdate: (callback) => void;
         }
         sm.onEntryUpdated(entryStateKey, entry.data);
         sm.activeProfileDraft = null;
-        sm.updateStorage();
+        sm.queueStorageUpdate();
         sm.updateEntryIndicators(entry);
         sm.updateEntries();
         sm.updateInspector();
@@ -1776,7 +1797,7 @@ declare let onAfterUiUpdate: (callback) => void;
                 previousSort: sm.entryFilter.sort
             };
             sm.bumpManualOrderVersion();
-            sm.updateStorage();
+            sm.queueStorageUpdate();
             sm.syncConfigReorderControlsState?.();
             sm.queueEntriesUpdate(0);
         };
@@ -2219,7 +2240,7 @@ declare let onAfterUiUpdate: (callback) => void;
                 return;
             }
             targetState.preview = previewData;
-            sm.updateStorage();
+            sm.queueStorageUpdate();
             sm.queueEntriesUpdate(0);
         });
         const getEntryFromEvent = (event) => {
@@ -3302,7 +3323,7 @@ declare let onAfterUiUpdate: (callback) => void;
         if (group == 'favourites') {
             sm.appendFavouritesOrderKey?.(`${state.createdAt}`);
         }
-        sm.updateStorage();
+        sm.queueStorageUpdate();
     };
     sm.deleteStates = function (requireConfirmation, ...stateKeys) {
         const shouldDelete = !requireConfirmation || confirm(`Delete ${stateKeys.length} item${stateKeys.length == 1 ? '' : 's'}? This action cannot be undone.`);
@@ -3314,7 +3335,7 @@ declare let onAfterUiUpdate: (callback) => void;
             sm.onEntryRemoved(`${key ?? ''}`);
             delete sm.memoryStorage.entries.data[key];
         }
-        sm.updateStorage();
+        sm.queueStorageUpdate();
         return true;
     };
     sm.addStateToGroup = function (stateKey, group) {
@@ -3327,7 +3348,7 @@ declare let onAfterUiUpdate: (callback) => void;
             sm.appendFavouritesOrderKey?.(`${stateKey ?? ''}`);
         }
         sm.onEntryUpdated(`${stateKey ?? ''}`, state);
-        sm.updateStorage();
+        sm.queueStorageUpdate();
     };
     sm.removeStateFromGroup = function (stateKey, group) {
         let state = sm.memoryStorage.entries.data[stateKey];
@@ -3348,7 +3369,7 @@ declare let onAfterUiUpdate: (callback) => void;
                 sm.onEntryUpdated(`${stateKey ?? ''}`, state);
             }
         }
-        sm.updateStorage();
+        sm.queueStorageUpdate();
     };
     sm.setStateName = function (stateKey, name) {
         const state = sm.memoryStorage.entries.data[stateKey];
@@ -3519,24 +3540,24 @@ declare let onAfterUiUpdate: (callback) => void;
         })
             .catch(e => sm.utils.logResponseError("[State Manager] Getting file storage failed with error", e));
     };
-    sm.updateStorage = async function () {
+    sm.runStorageUpdate = async function () {
         if (updateStorageDebounceHandle != null) {
             clearTimeout(updateStorageDebounceHandle);
             updateStorageDebounceHandle = null;
         }
-        sm.api.get("savelocation")
+        const compressedData = await sm.getCompressedMemoryStorage();
+        return sm.api.get("savelocation")
             .then(response => {
             if (!sm.utils.isValidResponse(response, 'location')) {
-                Promise.reject(response);
+                return Promise.reject(response);
             }
             else if (response.location == 'File') {
-                sm.updateFileStorage();
+                return sm.updateFileStorage(compressedData);
             }
             else {
-                sm.updateLocalStorage();
+                return sm.updateLocalStorage(compressedData);
             }
-        })
-            .catch(e => sm.utils.logResponseError("[State Manager] Updating storage failed with error", e));
+        });
     };
     sm.updateLocalStorage = async function (compressedData) {
         if (compressedData == undefined) {
@@ -3726,7 +3747,7 @@ declare let onAfterUiUpdate: (callback) => void;
             }
             sm.bumpEntryCacheVersion();
         }
-        sm.updateStorage();
+        sm.queueStorageUpdate();
     };
     sm.clearData = function (location) {
         sm.api.get("savelocation")
