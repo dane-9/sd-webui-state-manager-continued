@@ -3871,20 +3871,23 @@
         const quickSettings = (state.quickSettings && typeof state.quickSettings === 'object') ? state.quickSettings : {};
         sm.applyQuickParameters(quickSettings); // The 4 mandatory ones always get saved, any other relevant ones will be in here. Easy!
         const savedComponentDefaults = sm.memoryStorage.savedDefaults[state.defaults];
-        let mergedComponentSettings = (state.componentSettings && typeof state.componentSettings === 'object') ? state.componentSettings : {};
-        // Add saved default value if it differs from the current UI
-        for (const settingPath in savedComponentDefaults) {
-            if (settingPath.indexOf(state.type) == -1) {
-                continue;
-            }
-            if (!mergedComponentSettings.hasOwnProperty(settingPath)) {
-                if (!sm.componentMap.hasOwnProperty(settingPath)) { // rogue setting
+        let mergedComponentSettings = (state.componentSettings && typeof state.componentSettings === 'object') ? { ...state.componentSettings } : {};
+        // For any setting path that exists in defaults but was NOT explicitly saved in componentSettings
+        // (i.e. it matched the default at save time), include the default value unconditionally.
+        // We must not skip based on the current UI value — props.value can be stale after Gradio
+        // render cycles, causing values to silently not apply.
+        if (savedComponentDefaults) {
+            for (const settingPath in savedComponentDefaults) {
+                if (settingPath.indexOf(state.type) == -1) {
                     continue;
                 }
-                const value = savedComponentDefaults[settingPath];
-                const mappedComponents = sm.componentMap[settingPath].entries;
-                for (let i = 0; i < mappedComponents.length; i++) {
-                    if (!sm.utils.areLooselyEqualValue(value, sm.getComponentEntryValue(sm.componentMap[settingPath], i))) {
+                if (!mergedComponentSettings.hasOwnProperty(settingPath)) {
+                    if (!sm.componentMap.hasOwnProperty(settingPath)) { // rogue setting
+                        continue;
+                    }
+                    const value = savedComponentDefaults[settingPath];
+                    const mappedComponents = sm.componentMap[settingPath].entries;
+                    for (let i = 0; i < mappedComponents.length; i++) {
                         mergedComponentSettings[mappedComponents.length == 1 ? settingPath : `${settingPath}/${i}`] = value;
                     }
                 }
