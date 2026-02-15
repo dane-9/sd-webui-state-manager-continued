@@ -1,4 +1,3 @@
-
 (function (sm) {
     // https://github.com/DVLP/localStorageDB - Allows use of indexedDB with a simple localStorage-like wrapper
     // @ts-ignore
@@ -3054,7 +3053,7 @@
                 const settingPath = sectionName.endsWith('.py') ? getScriptSettingName(sectionName.substring(0, sectionName.length - 3), settingName) : `${sectionName}/${settingName}`;
                 if (curatedSettingNames.has(settingPath) ||
                     (sm.componentMap.hasOwnProperty(settingPath) && sm.memoryStorage.currentDefault.contents.hasOwnProperty(settingPath) &&
-                        sm.componentMap[settingPath].entries.every(e => sm.utils.areLooselyEqualValue(value, e.component.props.value, sm.memoryStorage.currentDefault.contents[settingPath])))) {
+                        sm.componentMap[settingPath].entries.every((e, idx) => sm.utils.areLooselyEqualValue(value, sm.getComponentEntryValue(sm.componentMap[settingPath], idx), sm.memoryStorage.currentDefault.contents[settingPath])))) {
                     delete mergedComponentSettings[sectionName][settingName];
                 }
             }
@@ -3077,7 +3076,7 @@
                     const mappedComponents = sm.componentMap[settingPathInfo.basePath].entries;
                     for (let i = 0; i < mappedComponents.length; i++) {
                         const finalSettingName = mappedComponents.length == 1 ? settingName : `${settingName} ${i}`;
-                        if (!sm.utils.areLooselyEqualValue(value, mappedComponents[i].component.props.value, sm.memoryStorage.currentDefault.contents[settingPathInfo.basePath])) {
+                        if (!sm.utils.areLooselyEqualValue(value, sm.getComponentEntryValue(sm.componentMap[settingPathInfo.basePath], i), sm.memoryStorage.currentDefault.contents[settingPathInfo.basePath])) {
                             mergedComponentSettings[sectionName][finalSettingName] = value;
                         }
                     }
@@ -3116,7 +3115,7 @@
         for (const setting of settings) {
             const settingPathInfo = sm.utils.getSettingPathInfo(setting.path);
             if (sm.componentMap.hasOwnProperty(settingPathInfo.basePath)) {
-                if (sm.componentMap[settingPathInfo.basePath].entries[settingPathInfo.index].component.props.value != setting.value) {
+                if (sm.getComponentEntryValue(sm.componentMap[settingPathInfo.basePath], settingPathInfo.index) != setting.value) {
                     element.dataset['valueDiff'] = 'changed';
                     break;
                 }
@@ -3145,18 +3144,87 @@
             .catch(e => sm.utils.logResponseError("[State Manager] Applying quicksettings failed with error", e));
     };
     sm.applyComponentSettings = function (settings) {
-        for (let componentPath of Object.keys(settings)) {
+        // Separate InputAccordion settings from the rest.
+        // Accordion toggles cause Gradio to re-render child components asynchronously,
+        // so we apply them first and defer the remaining settings.
+        const accordionPaths = [];
+        const otherPaths = [];
+        let hasAccordionChanges = false;
+        for (const componentPath of Object.keys(settings)) {
             const settingPathInfo = sm.utils.getSettingPathInfo(componentPath);
             const componentData = sm.componentMap[settingPathInfo.basePath];
             if (!componentData) {
                 console.warn(`[State Manager] Could not apply component path ${settingPathInfo.basePath}`);
                 continue;
             }
-            componentData.entries[settingPathInfo.index].component.props.value = settings[componentPath];
-            componentData.entries[settingPathInfo.index].component.instance.$set({ value: componentData.entries[settingPathInfo.index].component.props.value });
+            if (componentData.isInputAccordion) {
+                accordionPaths.push(componentPath);
+                const currentValue = sm.getComponentEntryValue(componentData, settingPathInfo.index);
+                if (currentValue !== settings[componentPath]) {
+                    hasAccordionChanges = true;
+                }
+            }
+            else {
+                otherPaths.push(componentPath);
+            }
+        }
+        // Helper to apply a single setting via the standard Svelte path (for non-accordion components)
+        const applySvelte = (componentPath) => {
+            const settingPathInfo = sm.utils.getSettingPathInfo(componentPath);
+            const componentData = sm.componentMap[settingPathInfo.basePath];
+            if (!componentData) return;
+            const entryData = componentData.entries[settingPathInfo.index];
+            entryData.component.props.value = settings[componentPath];
+            entryData.component.instance.$set({ value: entryData.component.props.value });
             const e = new Event("change", { bubbles: true });
-            Object.defineProperty(e, "target", { value: componentData.entries[settingPathInfo.index].element });
-            componentData.entries[settingPathInfo.index].element.dispatchEvent(e);
+            Object.defineProperty(e, "target", { value: entryData.element });
+            entryData.element.dispatchEvent(e);
+        };
+        // Helper to apply an InputAccordion setting via direct DOM checkbox manipulation
+        const applyAccordion = (componentPath) => {
+            const settingPathInfo = sm.utils.getSettingPathInfo(componentPath);
+            const componentData = sm.componentMap[settingPathInfo.basePath];
+            if (!componentData) return;
+            const entryData = componentData.entries[settingPathInfo.index];
+            const targetValue = Boolean(settings[componentPath]);
+            // 1. Set the hidden checkbox directly
+            if (entryData.element && entryData.element.tagName === 'INPUT') {
+                entryData.element.checked = targetValue;
+                entryData.element.dispatchEvent(new Event('input', { bubbles: true }));
+                entryData.element.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            // 2. Sync the visible checkbox
+            if (componentData.visibleCheckbox && componentData.visibleCheckbox.tagName === 'INPUT') {
+                componentData.visibleCheckbox.checked = targetValue;
+                componentData.visibleCheckbox.dispatchEvent(new Event('input', { bubbles: true }));
+                componentData.visibleCheckbox.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            // 3. Also update via Svelte in case some handlers depend on it
+            entryData.component.props.value = targetValue;
+            try { entryData.component.instance.$set({ value: targetValue }); } catch (e) {}
+            // 4. Call the onChange sync callback
+            if (typeof componentData.onChange === 'function') {
+                componentData.onChange();
+            }
+        };
+        // Apply accordion settings first
+        for (const path of accordionPaths) {
+            applyAccordion(path);
+        }
+        // If accordion states changed, defer child settings to let the UI re-render
+        if (hasAccordionChanges && otherPaths.length > 0) {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    for (const path of otherPaths) {
+                        applySvelte(path);
+                    }
+                });
+            });
+        }
+        else {
+            for (const path of otherPaths) {
+                applySvelte(path);
+            }
         }
     };
     sm.createInspectorSettingsAccordion = function (label, data) {
@@ -3424,14 +3492,25 @@
             // To make matters worse, the refiner is just called `txt2img_enable`, and doesn't add itself to the monitored components
             // Since there's no way to retrieve the refiner property path from the accordion, I'm just gonna manually hack those in for now
             const inputAccordions = document.querySelectorAll('#tab_txt2img .input-accordion, #tab_img2img .input-accordion');
+            // Helper: resolve a selector result to the actual <input type="checkbox"> element,
+            // whether the result is the input itself or a Gradio wrapper div containing one.
+            const resolveCheckboxInput = (el) => {
+                if (!el) return null;
+                if (el.tagName === 'INPUT') return el;
+                const input = el.querySelector('input[type="checkbox"]');
+                return input || el;
+            };
             for (const accordion of inputAccordions) {
                 const component = componentsByElemId.get(accordion.id);
-                const checkbox = accordion.parentElement.querySelector(`#${accordion.id}-checkbox`);
-                const visibleCheckbox = accordion.parentElement.querySelector(`#${accordion.id}-visible-checkbox`);
-                if (!component || !checkbox || !visibleCheckbox) {
+                const checkboxRaw = accordion.parentElement.querySelector(`#${accordion.id}-checkbox`);
+                const visibleCheckboxRaw = accordion.parentElement.querySelector(`#${accordion.id}-visible-checkbox`);
+                if (!component || !checkboxRaw || !visibleCheckboxRaw) {
                     console.warn(`[State Manager] An input accordion with an unexpected layout or naming was found (id: ${accordion.id})`);
                     continue;
                 }
+                // Resolve to actual <input> elements in case the selectors return wrapper divs
+                const checkbox = resolveCheckboxInput(checkboxRaw);
+                const visibleCheckbox = resolveCheckboxInput(visibleCheckboxRaw);
                 let data = sm.componentMap[`${accordion.id.split('_')[0]}/${component.label}`];
                 if (!data) {
                     data = {
@@ -3449,10 +3528,18 @@
                             break;
                     }
                 }
+                else {
+                    // Entry already existed from the API loop — update its element to the resolved checkbox
+                    data.entries[0].element = checkbox;
+                }
+                // Mark as InputAccordion so we can handle reading/writing specially
+                data.isInputAccordion = true;
+                data.accordionElement = accordion;
+                data.visibleCheckbox = visibleCheckbox;
                 // We could use data.element.addEventListener("change", ...) here, but I don't like the idea of adding a "global" listener
                 // like that, that extends outside the scope of this extension. Thus, a hacky data.onchange() that we call manually. Neat.
                 data.onChange = () => {
-                    visibleCheckbox.checked = data.entries[0].element.checked;
+                    visibleCheckbox.checked = checkbox.checked;
                 };
             }
             for (const component of components) { // {path: id}
@@ -3797,7 +3884,7 @@
                 const value = savedComponentDefaults[settingPath];
                 const mappedComponents = sm.componentMap[settingPath].entries;
                 for (let i = 0; i < mappedComponents.length; i++) {
-                    if (!sm.utils.areLooselyEqualValue(value, mappedComponents[i].component.props.value)) {
+                    if (!sm.utils.areLooselyEqualValue(value, sm.getComponentEntryValue(sm.componentMap[settingPath], i))) {
                         mergedComponentSettings[mappedComponents.length == 1 ? settingPath : `${settingPath}/${i}`] = value;
                     }
                 }
@@ -3833,6 +3920,47 @@
         })
             .catch(e => sm.utils.logResponseError("[State Manager] Getting quicksettings failed with error", e));
     };
+    // Helper: Read the current value for a component map entry.
+    // For most components, component.props.value is fine (it stays in sync via Gradio).
+    // For InputAccordion components specifically, props.value is NOT a reliable boolean —
+    // the actual enabled/disabled state lives in the DOM checkbox element.
+    sm.getComponentEntryValue = function (componentData, entryIndex) {
+        if (entryIndex === undefined) entryIndex = 0;
+        const entry = componentData.entries[entryIndex];
+        if (componentData.isInputAccordion) {
+            const el = entry.element;
+            // entry.element should be the resolved <input type="checkbox">
+            if (el && el.tagName === 'INPUT') {
+                return el.checked;
+            }
+            // Fallback: check the visible checkbox
+            if (componentData.visibleCheckbox && componentData.visibleCheckbox.tagName === 'INPUT') {
+                return componentData.visibleCheckbox.checked;
+            }
+            // Last resort: check the accordion's open attribute/class
+            if (componentData.accordionElement) {
+                return componentData.accordionElement.classList.contains('open') ||
+                    componentData.accordionElement.hasAttribute('open');
+            }
+            console.warn('[State Manager] Could not reliably read InputAccordion state, falling back to props.value');
+        }
+        return entry.component.props.value;
+    };
+    // Diagnostic: call stateManager.debugInputAccordions() in browser console to inspect accordion state
+    sm.debugInputAccordions = function () {
+        const paths = Object.keys(sm.componentMap).filter(p => sm.componentMap[p].isInputAccordion);
+        for (const path of paths) {
+            const data = sm.componentMap[path];
+            const el = data.entries[0].element;
+            console.log(`[SM Debug] Path: ${path}`);
+            console.log(`  element tag: ${el?.tagName}, checked: ${el?.checked}, type: ${el?.type}`);
+            console.log(`  visibleCheckbox tag: ${data.visibleCheckbox?.tagName}, checked: ${data.visibleCheckbox?.checked}`);
+            console.log(`  accordion classes: ${data.accordionElement?.className}`);
+            console.log(`  props.value: ${data.entries[0].component.props.value} (type: ${typeof data.entries[0].component.props.value})`);
+            console.log(`  getComponentEntryValue result: ${sm.getComponentEntryValue(data, 0)}`);
+        }
+        if (paths.length === 0) console.warn('[SM Debug] No InputAccordion entries found in componentMap');
+    };
     sm.getComponentSettings = function (type, changedOnly = true) {
         let settings = {};
         // let noComponentFoundSettings: string[] = [];
@@ -3846,7 +3974,7 @@
             if (reType.test(componentPath)) {
                 for (let i = 0; i < componentData.entries.length; i++) {
                     const finalComponentPath = componentData.entries.length == 1 ? componentPath : `${componentPath}/${i}`;
-                    const currentValue = componentData.entries[i].component.props.value;
+                    const currentValue = sm.getComponentEntryValue(componentData, i);
                     if (!changedOnly || (sm.memoryStorage.currentDefault.contents[finalComponentPath] != currentValue)) {
                         settings[finalComponentPath] = currentValue;
                     }
@@ -4285,4 +4413,3 @@
         }
     }
 });
-

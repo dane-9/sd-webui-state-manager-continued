@@ -3061,7 +3061,7 @@ declare let onAfterUiUpdate: (callback) => void;
                 const settingPath = sectionName.endsWith('.py') ? getScriptSettingName(sectionName.substring(0, sectionName.length - 3), settingName) : `${sectionName}/${settingName}`;
                 if (curatedSettingNames.has(settingPath) ||
                     (sm.componentMap.hasOwnProperty(settingPath) && sm.memoryStorage.currentDefault.contents.hasOwnProperty(settingPath) &&
-                        sm.componentMap[settingPath].entries.every(e => sm.utils.areLooselyEqualValue(value, e.component.props.value, sm.memoryStorage.currentDefault.contents[settingPath])))) {
+                        sm.componentMap[settingPath].entries.every((e, idx) => sm.utils.areLooselyEqualValue(value, sm.getComponentEntryValue(sm.componentMap[settingPath], idx), sm.memoryStorage.currentDefault.contents[settingPath])))) {
                     delete mergedComponentSettings[sectionName][settingName];
                 }
             }
@@ -3084,7 +3084,7 @@ declare let onAfterUiUpdate: (callback) => void;
                     const mappedComponents = sm.componentMap[settingPathInfo.basePath].entries;
                     for (let i = 0; i < mappedComponents.length; i++) {
                         const finalSettingName = mappedComponents.length == 1 ? settingName : `${settingName} ${i}`;
-                        if (!sm.utils.areLooselyEqualValue(value, mappedComponents[i].component.props.value, sm.memoryStorage.currentDefault.contents[settingPathInfo.basePath])) {
+                        if (!sm.utils.areLooselyEqualValue(value, sm.getComponentEntryValue(sm.componentMap[settingPathInfo.basePath], i), sm.memoryStorage.currentDefault.contents[settingPathInfo.basePath])) {
                             mergedComponentSettings[sectionName][finalSettingName] = value;
                         }
                     }
@@ -3123,7 +3123,7 @@ declare let onAfterUiUpdate: (callback) => void;
         for (const setting of settings) {
             const settingPathInfo = sm.utils.getSettingPathInfo(setting.path);
             if (sm.componentMap.hasOwnProperty(settingPathInfo.basePath)) {
-                if (sm.componentMap[settingPathInfo.basePath].entries[settingPathInfo.index].component.props.value != setting.value) {
+                if (sm.getComponentEntryValue(sm.componentMap[settingPathInfo.basePath], settingPathInfo.index) != setting.value) {
                     element.dataset['valueDiff'] = 'changed';
                     break;
                 }
@@ -3152,18 +3152,63 @@ declare let onAfterUiUpdate: (callback) => void;
             .catch(e => sm.utils.logResponseError("[State Manager] Applying quicksettings failed with error", e));
     };
     sm.applyComponentSettings = function (settings) {
-        for (let componentPath of Object.keys(settings)) {
+        // Separate InputAccordion settings from the rest.
+        // Accordion toggles can cause async re-renders that reset child component values,
+        // so we apply them first and defer the remaining settings.
+        const accordionSettings = {};
+        const otherSettings = {};
+        let hasAccordionChanges = false;
+        for (const componentPath of Object.keys(settings)) {
             const settingPathInfo = sm.utils.getSettingPathInfo(componentPath);
             const componentData = sm.componentMap[settingPathInfo.basePath];
             if (!componentData) {
                 console.warn(`[State Manager] Could not apply component path ${settingPathInfo.basePath}`);
                 continue;
             }
-            componentData.entries[settingPathInfo.index].component.props.value = settings[componentPath];
-            componentData.entries[settingPathInfo.index].component.instance.$set({ value: componentData.entries[settingPathInfo.index].component.props.value });
-            const e = new Event("change", { bubbles: true });
-            Object.defineProperty(e, "target", { value: componentData.entries[settingPathInfo.index].element });
-            componentData.entries[settingPathInfo.index].element.dispatchEvent(e);
+            if (componentData.isInputAccordion) {
+                accordionSettings[componentPath] = settings[componentPath];
+                // Check if the value is actually changing
+                const currentValue = componentData.entries[settingPathInfo.index].element.checked;
+                if (currentValue !== settings[componentPath]) {
+                    hasAccordionChanges = true;
+                }
+            }
+            else {
+                otherSettings[componentPath] = settings[componentPath];
+            }
+        }
+        // Helper to apply a batch of settings
+        const applyBatch = (batch) => {
+            for (const componentPath of Object.keys(batch)) {
+                const settingPathInfo = sm.utils.getSettingPathInfo(componentPath);
+                const componentData = sm.componentMap[settingPathInfo.basePath];
+                if (!componentData) {
+                    continue;
+                }
+                componentData.entries[settingPathInfo.index].component.props.value = batch[componentPath];
+                componentData.entries[settingPathInfo.index].component.instance.$set({ value: componentData.entries[settingPathInfo.index].component.props.value });
+                const e = new Event("change", { bubbles: true });
+                Object.defineProperty(e, "target", { value: componentData.entries[settingPathInfo.index].element });
+                componentData.entries[settingPathInfo.index].element.dispatchEvent(e);
+                // For InputAccordion entries, sync the visible checkbox so the accordion visually opens/closes
+                if (componentData.isInputAccordion && typeof componentData.onChange === 'function') {
+                    componentData.onChange();
+                }
+            }
+        };
+        // Apply accordion settings first
+        applyBatch(accordionSettings);
+        // If accordion states changed, defer child settings to let the UI re-render.
+        // Otherwise apply immediately.
+        if (hasAccordionChanges && Object.keys(otherSettings).length > 0) {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    applyBatch(otherSettings);
+                });
+            });
+        }
+        else {
+            applyBatch(otherSettings);
         }
     };
     sm.createInspectorSettingsAccordion = function (label, data) {
@@ -3456,6 +3501,7 @@ declare let onAfterUiUpdate: (callback) => void;
                             break;
                     }
                 }
+                data.isInputAccordion = true;
                 // We could use data.element.addEventListener("change", ...) here, but I don't like the idea of adding a "global" listener
                 // like that, that extends outside the scope of this extension. Thus, a hacky data.onchange() that we call manually. Neat.
                 data.onChange = () => {
@@ -3804,7 +3850,7 @@ declare let onAfterUiUpdate: (callback) => void;
                 const value = savedComponentDefaults[settingPath];
                 const mappedComponents = sm.componentMap[settingPath].entries;
                 for (let i = 0; i < mappedComponents.length; i++) {
-                    if (!sm.utils.areLooselyEqualValue(value, mappedComponents[i].component.props.value)) {
+                    if (!sm.utils.areLooselyEqualValue(value, sm.getComponentEntryValue(sm.componentMap[settingPath], i))) {
                         mergedComponentSettings[mappedComponents.length == 1 ? settingPath : `${settingPath}/${i}`] = value;
                     }
                 }
@@ -3840,6 +3886,16 @@ declare let onAfterUiUpdate: (callback) => void;
         })
             .catch(e => sm.utils.logResponseError("[State Manager] Getting quicksettings failed with error", e));
     };
+    // Helper: Reliably read the current value for a component map entry.
+    // For InputAccordion components, component.props.value can be stale (not updated
+    // when the user toggles the accordion in the UI). Read from the DOM element instead.
+    sm.getComponentEntryValue = function (componentData, entryIndex = 0) {
+        const entry = componentData.entries[entryIndex];
+        if (componentData.isInputAccordion) {
+            return entry.element.checked;
+        }
+        return entry.component.props.value;
+    };
     sm.getComponentSettings = function (type, changedOnly = true) {
         let settings = {};
         // let noComponentFoundSettings: string[] = [];
@@ -3853,7 +3909,7 @@ declare let onAfterUiUpdate: (callback) => void;
             if (reType.test(componentPath)) {
                 for (let i = 0; i < componentData.entries.length; i++) {
                     const finalComponentPath = componentData.entries.length == 1 ? componentPath : `${componentPath}/${i}`;
-                    const currentValue = componentData.entries[i].component.props.value;
+                    const currentValue = sm.getComponentEntryValue(componentData, i);
                     if (!changedOnly || (sm.memoryStorage.currentDefault.contents[finalComponentPath] != currentValue)) {
                         settings[finalComponentPath] = currentValue;
                     }
